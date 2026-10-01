@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Историческая игра — Миссия 1</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+    <div id="hud">
+        <div class="res">
+            <span>🍞 <b id="r-food">0</b></span>
+            <span>🪵 <b id="r-wood">0</b></span>
+            <span>🪙 <b id="r-gold">0</b></span>
+        </div>
+        <div>❤️ <b id="r-patriot">100</b></div>
+    </div>
+    <div id="patriot-bar"><div id="patriot-fill"></div></div>
+
+    <div class="screen active" id="briefing">
+        <h1>Миссия 1: Земля предков</h1>
+        <p>Ты — воевода, которому поручено основать поселение на диких землях. Вокруг — лес, поле и село, но они под туманом войны.</p>
+        <p>Начни с постройки базы, разведай окрестности и наладь производство.</p>
+        <div class="tasks-preview">
+            <b>Задачи:</b><br>
+            ☐ Построить базу<br>
+            ☐ Провести разведку местности<br>
+            ☐ Произвести еду ×5<br>
+            ☐ Добыть древесину ×5<br>
+            ☐ Построить здание в селе<br>
+            ☐ Построить здание в городе<br>
+            ☐ Произвести полуфабрикат в селе<br>
+            ☐ Произвести товар в городе
+        </div>
+        <button class="btn btn-primary" onclick="startMission()">Начать</button>
+    </div>
+
+    <div class="screen" id="map-screen">
+        <div id="map-scroll">
+            <div id="map-grid"></div>
+        </div>
+    </div>
+
+    <div id="current-task">
+        <span id="task-text">—</span>
+    </div>
+
+    <div id="action-panel">
+        <div id="action-title"></div>
+        <div id="action-desc"></div>
+        <div id="action-buttons"></div>
+        <button class="btn btn-close" onclick="closeActionPanel()">Отмена</button>
+    </div>
+
+    <div id="log"></div>
+
+    <div id="modal">
+        <div id="modal-content">
+            <h2 id="modal-title"></h2>
+            <p id="modal-text"></p>
+            <button class="btn btn-primary" id="modal-btn"></button>
+        </div>
+    </div>
+
+</div>
+<script src="index.js"></script>
+</body>
+</html>

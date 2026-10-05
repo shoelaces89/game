@@ -89,6 +89,7 @@ html, body {
 
 .screen.active { display: flex; }
 
+/* ==== ЭКРАН ЭПОХИ ==== */
 #era-map {
     flex: 1;
     display: flex;
@@ -141,6 +142,7 @@ html, body {
 .region-card .rc-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
 .region-card .rc-desc { font-size: 12px; color: #b0a890; }
 
+/* ==== ЭКРАН РЕГИОНА ==== */
 #region-info-bar {
     background: #1f1a10;
     border-bottom: 1px solid #6b5a2e;
@@ -196,6 +198,7 @@ html, body {
 .mission-card .mc-title { font-size: 15px; font-weight: bold; margin-bottom: 4px; }
 .mission-card .mc-status { font-size: 11px; color: #b0a890; }
 
+/* ==== ЭКРАН МИССИИ ==== */
 #mission-task {
     background: rgba(31, 26, 16, 0.95);
     border-bottom: 1px solid #6b5a2e;
@@ -248,6 +251,7 @@ html, body {
     margin: 0;
 }
 
+/* ==== МИНИ-ЭКРАНЫ ==== */
 .mini-header {
     display: flex;
     justify-content: space-between;
@@ -267,7 +271,8 @@ html, body {
     margin: 0;
 }
 
-#field-grid, #forest-grid {
+/* ==== ПОЛЕ ==== */
+#field-grid {
     flex: 1;
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -277,6 +282,57 @@ html, body {
     overflow: auto;
 }
 
+/* ==== ЛЕС (НОВАЯ ВЕРСИЯ) ==== */
+#forest-grid-wrapper {
+    flex: 1;
+    overflow: auto;
+    padding: 6px;
+}
+
+#forest-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 3px;
+}
+
+#forest-storage-wrapper {
+    background: #1f1a10;
+    border-top: 2px solid #6b5a2e;
+    padding: 8px;
+    flex-shrink: 0;
+}
+
+#forest-storage {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.storage-slot {
+    background: #3a2a1a;
+    border: 2px dashed #6b5a2e;
+    border-radius: 4px;
+    aspect-ratio: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.storage-slot.built {
+    background: #5a4a2a;
+    border-style: solid;
+}
+
+.storage-slot.filled {
+    background: #6ba040;
+    border-color: #8ac060;
+}
+
+/* ==== КЛЕТКИ ==== */
 .cell {
     background: #4a3a2a;
     border: 1px solid #6b5a2e;
@@ -313,6 +369,7 @@ html, body {
     50% { box-shadow: 0 0 0 6px rgba(107,160,64,0); }
 }
 
+/* ==== ЗОНА ВЫВОЗА ==== */
 .export-zone {
     background: #3a2a1a;
     border-top: 2px solid #6b5a2e;
@@ -333,19 +390,7 @@ html, body {
     border-color: #f0d060;
 }
 
-#field-panel, #forest-panel {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    background: #1f1a10;
-    border-top: 2px solid #6b5a2e;
-    padding: 14px 16px;
-    transform: translateY(100%);
-    transition: transform 0.25s;
-    z-index: 10;
-}
-
-#field-panel.open, #forest-panel.open { transform: translateY(0); }
-
+/* ==== КНОПКИ ==== */
 .btn {
     display: block;
     width: 100%;
@@ -367,6 +412,7 @@ html, body {
 .btn-primary:active { background: #8ac060; }
 .btn-close { background: #4a3a2a; }
 
+/* ==== ПАНЕЛЬ ДЕЙСТВИЙ ==== */
 #action-panel {
     position: absolute;
     bottom: 0; left: 0; right: 0;
@@ -386,6 +432,7 @@ html, body {
     margin-bottom: 10px;
 }
 
+/* ==== МОДАЛКА ==== */
 #modal {
     position: absolute;
     inset: 0;
@@ -424,6 +471,7 @@ html, body {
     margin-bottom: 16px;
 }
 
+/* ==== ЛОГ ==== */
 #log {
     position: absolute;
     bottom: 0; left: 0; right: 0;

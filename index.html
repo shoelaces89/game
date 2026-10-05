@@ -74,17 +74,25 @@
         <div id="field-panel"></div>
     </div>
 
-    <!-- ЭКРАН 5: ЛЕС -->
+    <!-- ЭКРАН 5: ЛЕС (НОВАЯ ВЕРСИЯ) -->
     <div class="screen" id="screen-forest">
         <div class="mini-header">
             <button class="btn btn-small" onclick="backToMission()">← Назад</button>
             <span>🌲 Лес</span>
         </div>
-        <div id="forest-grid"></div>
-        <div id="forest-export" class="export-zone">
-            <span>🚚 Зона вывоза</span>
+
+        <!-- Верхняя зона: сетка леса -->
+        <div id="forest-grid-wrapper">
+            <div id="forest-grid"></div>
         </div>
-        <div id="forest-panel"></div>
+
+        <!-- Нижняя зона: склады -->
+        <div id="forest-storage-wrapper">
+            <div id="forest-storage"></div>
+            <div id="forest-export" class="export-zone">
+                <span>🚚 Зона вывоза</span>
+            </div>
+        </div>
     </div>
 
     <!-- ПАНЕЛЬ ДЕЙСТВИЙ -->

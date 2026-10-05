@@ -8,7 +8,8 @@ const CONFIG = {
     map: { cols: 4, rows: 5 },
     miniMap: { cols: 6, rows: 5 },
     storageSlots: 5,
-    maxResourcePerCell: 25,
+    resourceMin: 20,
+    resourceMax: 70,
     storageCapacity: 100,
     gatherIntervalMs: 10000,
     costs: {
@@ -94,6 +95,10 @@ const RESOURCE_LIST = [
     { id: 'nothing', name: 'Ничего', icon: '⛔' }
 ];
 
+function randResource() {
+    return Math.floor(Math.random() * (CONFIG.resourceMax - CONFIG.resourceMin + 1)) + CONFIG.resourceMin;
+}
+
 function generateMissionMap() {
     const { cols, rows } = CONFIG.map;
     const total = cols * rows;
@@ -144,12 +149,11 @@ function generateForestMap() {
         const rand = Math.random();
         let type = 'empty';
         let resource = null;
-        let hasResource = false;
 
         if (rand < 0.35) {
-            type = 'wood'; hasResource = true; resource = 'wood';
+            type = 'wood'; resource = 'wood';
         } else if (rand < 0.45) {
-            type = 'beehive'; hasResource = true; resource = 'beehive';
+            type = 'beehive'; resource = 'beehive';
         }
 
         const isStart = (col === 0 && row === rows - 1);
@@ -157,9 +161,8 @@ function generateForestMap() {
             index: i, col, row,
             open: isStart,
             type: type,
-            hasResource: hasResource,
             resource: resource,
-            remaining: hasResource ? CONFIG.maxResourcePerCell : 0,
+            remaining: type !== 'empty' ? randResource() : 0,
             worker: false
         });
     }
@@ -310,6 +313,7 @@ function openMission(missionId) {
     state.missionMap = generateMissionMap();
     state.forestMap = [];
     state.forestStorage = [];
+    state.gatherTimers = {};
     document.getElementById('mission-task-text').textContent = '📜 Построить базу';
     renderMissionMap();
     showScreen('screen-mission');
@@ -377,19 +381,12 @@ function onLocClick(loc) {
         addActionBtn(btns, '🌾 Открыть поле', () => { closeActionPanel(); openField(); }, true);
     } else if (loc.id === 'forest' && loc.owner === 'player') {
         addActionBtn(btns, '🌲 Зайти в лес', () => { closeActionPanel(); openForest(); }, true);
-        if (state.forestStorage.length > 0) {
-            const info = state.forestStorage
-                .filter(s => s.built && s.resource && s.resource !== 'nothing')
-                .map(s => {
-                    const res = RESOURCE_LIST.find(r => r.id === s.resource);
-                    return `${res.icon} ${s.amount}/${s.capacity}`;
-                }).join(' · ');
-            if (info) {
-                const infoDiv = document.createElement('div');
-                infoDiv.style.cssText = 'font-size:12px; color:#b0a890; margin-bottom:8px; padding:6px; background:#2a2418; border-radius:4px;';
-                infoDiv.textContent = '📦 ' + info;
-                btns.appendChild(infoDiv);
-            }
+        const summary = getForestSummary();
+        if (summary) {
+            const infoDiv = document.createElement('div');
+            infoDiv.style.cssText = 'font-size:12px; color:#b0a890; margin-bottom:8px; padding:6px; background:#2a2418; border-radius:4px;';
+            infoDiv.textContent = '📦 ' + summary;
+            btns.appendChild(infoDiv);
         }
     } else if (loc.owner === 'player') {
         addActionBtn(btns, '✅ Под контролем', () => {}, false);
@@ -398,6 +395,21 @@ function onLocClick(loc) {
     }
 
     panel.classList.add('open');
+}
+
+function getForestSummary() {
+    if (state.forestStorage.length === 0) return null;
+    const totals = {};
+    state.forestStorage.forEach(s => {
+        if (s.built && s.resource && s.resource !== 'nothing' && s.amount > 0) {
+            totals[s.resource] = (totals[s.resource] || 0) + s.amount;
+        }
+    });
+    const parts = Object.entries(totals).map(([resId, amount]) => {
+        const res = RESOURCE_LIST.find(r => r.id === resId);
+        return `${res.icon} ${amount}`;
+    });
+    return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function addActionBtn(container, label, onClick, enabled) {
@@ -509,24 +521,20 @@ function renderForest() {
         if (!cell.open) {
             div.classList.add('fog');
             div.textContent = '🌫️';
-        } else if (cell.type === 'wood') {
+        } else if (cell.type === 'wood' && cell.remaining > 0) {
             div.classList.add(cell.worker ? 'worker' : 'building');
             div.textContent = '🌲';
-            if (cell.remaining > 0) {
-                const amount = document.createElement('div');
-                amount.className = 'cell-amount';
-                amount.textContent = cell.remaining;
-                div.appendChild(amount);
-            }
-        } else if (cell.type === 'beehive') {
+            const amount = document.createElement('div');
+            amount.className = 'cell-amount';
+            amount.textContent = cell.remaining;
+            div.appendChild(amount);
+        } else if (cell.type === 'beehive' && cell.remaining > 0) {
             div.classList.add(cell.worker ? 'worker' : 'building');
             div.textContent = '🐝';
-            if (cell.remaining > 0) {
-                const amount = document.createElement('div');
-                amount.className = 'cell-amount';
-                amount.textContent = cell.remaining;
-                div.appendChild(amount);
-            }
+            const amount = document.createElement('div');
+            amount.className = 'cell-amount';
+            amount.textContent = cell.remaining;
+            div.appendChild(amount);
         }
         div.onclick = () => onForestCellClick(cell);
         cont.appendChild(div);
@@ -564,13 +572,8 @@ function onForestCellClick(cell) {
         return;
     }
 
-    if (!cell.hasResource) {
+    if (cell.type === 'empty' || cell.remaining <= 0) {
         log('Пустая клетка.');
-        return;
-    }
-
-    if (cell.remaining <= 0) {
-        log('Ресурс в клетке закончился.');
         return;
     }
 
@@ -615,15 +618,13 @@ function startGathering(cell) {
             stopGathering(cell);
             cell.worker = false;
             renderForest();
-            log('Ресурс закончился.');
+            log('Ресурс закончился. Крестьянин ушёл.');
             return;
         }
 
-        let resources = [];
-        if (cell.type === 'wood') resources = ['wood'];
-        if (cell.type === 'beehive') resources = ['honey', 'wax'];
-
+        const resources = cell.type === 'wood' ? ['wood'] : ['honey', 'wax'];
         let gathered = false;
+
         resources.forEach(resId => {
             const slot = state.forestStorage.find(s => s.built && s.resource === resId && s.amount < s.capacity);
             if (slot) {

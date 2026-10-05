@@ -27,7 +27,7 @@ html, body {
     padding: 8px 12px;
     background: #1f1a10;
     border-bottom: 2px solid #6b5a2e;
-    font-size: 13px;
+    font-size: 12px;
     flex-shrink: 0;
     z-index: 20;
 }
@@ -45,7 +45,7 @@ html, body {
     cursor: pointer;
 }
 
-.hud-res { display: flex; gap: 10px; }
+.hud-res { display: flex; gap: 8px; flex-wrap: wrap; }
 .hud-res span { white-space: nowrap; }
 
 #menu-panel {
@@ -89,7 +89,6 @@ html, body {
 
 .screen.active { display: flex; }
 
-/* ==== ЭКРАН ЭПОХИ ==== */
 #era-map {
     flex: 1;
     display: flex;
@@ -133,16 +132,10 @@ html, body {
 }
 
 .region-card:active { transform: scale(0.97); }
-
-.region-card.locked {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
+.region-card.locked { opacity: 0.4; cursor: not-allowed; }
 .region-card .rc-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
 .region-card .rc-desc { font-size: 12px; color: #b0a890; }
 
-/* ==== ЭКРАН РЕГИОНА ==== */
 #region-info-bar {
     background: #1f1a10;
     border-bottom: 1px solid #6b5a2e;
@@ -166,10 +159,7 @@ html, body {
     color: #d8d0b8;
 }
 
-#region-info-full.open {
-    max-height: 200px;
-    padding: 12px 14px;
-}
+#region-info-full.open { max-height: 200px; padding: 12px 14px; }
 
 #region-missions {
     flex: 1;
@@ -189,16 +179,10 @@ html, body {
 }
 
 .mission-card:active { transform: scale(0.98); }
-
-.mission-card.locked {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
+.mission-card.locked { opacity: 0.4; cursor: not-allowed; }
 .mission-card .mc-title { font-size: 15px; font-weight: bold; margin-bottom: 4px; }
 .mission-card .mc-status { font-size: 11px; color: #b0a890; }
 
-/* ==== ЭКРАН МИССИИ ==== */
 #mission-task {
     background: rgba(31, 26, 16, 0.95);
     border-bottom: 1px solid #6b5a2e;
@@ -209,11 +193,7 @@ html, body {
     flex-shrink: 0;
 }
 
-#mission-map-wrapper {
-    flex: 1;
-    overflow: auto;
-    padding: 8px;
-}
+#mission-map-wrapper { flex: 1; overflow: auto; padding: 8px; }
 
 #mission-map {
     display: grid;
@@ -245,13 +225,8 @@ html, body {
 .loc .loc-name { font-size: 12px; font-weight: bold; text-align: center; }
 .loc .loc-status { font-size: 9px; opacity: 0.7; margin-top: 2px; }
 
-.btn-back {
-    background: #4a3a2a;
-    border-radius: 0;
-    margin: 0;
-}
+.btn-back { background: #4a3a2a; border-radius: 0; margin: 0; }
 
-/* ==== МИНИ-ЭКРАНЫ ==== */
 .mini-header {
     display: flex;
     justify-content: space-between;
@@ -264,14 +239,8 @@ html, body {
     flex-shrink: 0;
 }
 
-.btn-small {
-    width: auto;
-    padding: 6px 12px;
-    font-size: 13px;
-    margin: 0;
-}
+.btn-small { width: auto; padding: 6px 12px; font-size: 13px; margin: 0; }
 
-/* ==== ПОЛЕ ==== */
 #field-grid {
     flex: 1;
     display: grid;
@@ -282,12 +251,7 @@ html, body {
     overflow: auto;
 }
 
-/* ==== ЛЕС (НОВАЯ ВЕРСИЯ) ==== */
-#forest-grid-wrapper {
-    flex: 1;
-    overflow: auto;
-    padding: 6px;
-}
+#forest-grid-wrapper { flex: 1; overflow: auto; padding: 6px; }
 
 #forest-grid {
     display: grid;
@@ -307,7 +271,6 @@ html, body {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 4px;
-    margin-bottom: 8px;
 }
 
 .storage-slot {
@@ -316,23 +279,20 @@ html, body {
     border-radius: 4px;
     aspect-ratio: 1;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    font-size: 18px;
+    font-size: 12px;
     cursor: pointer;
+    padding: 2px;
+    text-align: center;
 }
 
-.storage-slot.built {
-    background: #5a4a2a;
-    border-style: solid;
-}
+.storage-slot.built { background: #5a4a2a; border-style: solid; }
+.storage-slot .st-icon { font-size: 18px; }
+.storage-slot .st-amount { font-size: 10px; color: #d8d0b8; }
+.storage-slot .st-label { font-size: 9px; color: #8a8060; }
 
-.storage-slot.filled {
-    background: #6ba040;
-    border-color: #8ac060;
-}
-
-/* ==== КЛЕТКИ ==== */
 .cell {
     background: #4a3a2a;
     border: 1px solid #6b5a2e;
@@ -355,13 +315,16 @@ html, body {
     font-size: 14px;
 }
 
-.cell.building {
-    background: #5a4a2a;
-}
+.cell.building { background: #5a4a2a; }
+.cell.ready { background: #6ba040; animation: pulse 1s infinite; }
+.cell.worker { background: #5a5a2a; }
 
-.cell.ready {
-    background: #6ba040;
-    animation: pulse 1s infinite;
+.cell .cell-amount {
+    position: absolute;
+    bottom: 1px;
+    right: 2px;
+    font-size: 9px;
+    color: #f0d060;
 }
 
 @keyframes pulse {
@@ -369,7 +332,6 @@ html, body {
     50% { box-shadow: 0 0 0 6px rgba(107,160,64,0); }
 }
 
-/* ==== ЗОНА ВЫВОЗА ==== */
 .export-zone {
     background: #3a2a1a;
     border-top: 2px solid #6b5a2e;
@@ -382,15 +344,8 @@ html, body {
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: background 0.2s;
 }
 
-.export-zone.hover {
-    background: #5a4a2a;
-    border-color: #f0d060;
-}
-
-/* ==== КНОПКИ ==== */
 .btn {
     display: block;
     width: 100%;
@@ -412,7 +367,6 @@ html, body {
 .btn-primary:active { background: #8ac060; }
 .btn-close { background: #4a3a2a; }
 
-/* ==== ПАНЕЛЬ ДЕЙСТВИЙ ==== */
 #action-panel {
     position: absolute;
     bottom: 0; left: 0; right: 0;
@@ -432,7 +386,6 @@ html, body {
     margin-bottom: 10px;
 }
 
-/* ==== МОДАЛКА ==== */
 #modal {
     position: absolute;
     inset: 0;
@@ -471,7 +424,6 @@ html, body {
     margin-bottom: 16px;
 }
 
-/* ==== ЛОГ ==== */
 #log {
     position: absolute;
     bottom: 0; left: 0; right: 0;

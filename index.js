@@ -2,11 +2,15 @@ const CONFIG = {
     resources: {
         food: { name: 'Еда', icon: '🍞', start: 100 },
         wood: { name: 'Древесина', icon: '🪵', start: 100 },
-        gold: { name: 'Золото', icon: '🪙', start: 100 }
+        honey: { name: 'Мёд', icon: '🍯', start: 0 },
+        wax: { name: 'Воск', icon: '🕯️', start: 0 }
     },
     map: { cols: 4, rows: 5 },
     miniMap: { cols: 6, rows: 5 },
     storageSlots: 5,
+    maxResourcePerCell: 25,
+    storageCapacity: 100,
+    gatherIntervalMs: 10000,
     costs: {
         scoutLoc: 2,
         buildBase: 5,
@@ -54,7 +58,8 @@ const state = {
     resources: {
         food: CONFIG.resources.food.start,
         wood: CONFIG.resources.wood.start,
-        gold: CONFIG.resources.gold.start
+        honey: CONFIG.resources.honey.start,
+        wax: CONFIG.resources.wax.start
     },
     currentEra: 0,
     currentRegion: null,
@@ -64,8 +69,7 @@ const state = {
     forestMap: [],
     forestStorage: [],
     selectedLoc: null,
-    selectedForestCell: null,
-    missionStarted: false
+    gatherTimers: {}
 };
 
 const LOCATION_TYPES = [
@@ -83,7 +87,13 @@ const CELL_TYPES = {
     stump: { icon: '🪵', class: 'ready' }
 };
 
-/* ==== ГЕНЕРАЦИЯ ==== */
+const RESOURCE_LIST = [
+    { id: 'wood', name: 'Древесина', icon: '🪵' },
+    { id: 'honey', name: 'Мёд', icon: '🍯' },
+    { id: 'wax', name: 'Воск', icon: '🕯️' },
+    { id: 'nothing', name: 'Ничего', icon: '⛔' }
+];
+
 function generateMissionMap() {
     const { cols, rows } = CONFIG.map;
     const total = cols * rows;
@@ -131,17 +141,27 @@ function generateForestMap() {
     for (let i = 0; i < total; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const hasResource = Math.random() < 0.4;
+        const rand = Math.random();
+        let type = 'empty';
+        let resource = null;
+        let hasResource = false;
+
+        if (rand < 0.35) {
+            type = 'wood'; hasResource = true; resource = 'wood';
+        } else if (rand < 0.45) {
+            type = 'beehive'; hasResource = true; resource = 'beehive';
+        }
+
         const isStart = (col === 0 && row === rows - 1);
         cells.push({
             index: i,
             col, row,
             open: isStart,
+            type: type,
             hasResource: hasResource,
-            resource: hasResource ? 'wood' : null,
-            worker: false,
-            stored: 0,
-            ready: false
+            resource: resource,
+            remaining: hasResource ? CONFIG.maxResourcePerCell : 0,
+            worker: false
         });
     }
     return cells;
@@ -171,13 +191,12 @@ function generateStorage() {
             built: false,
             resource: null,
             amount: 0,
-            capacity: 20
+            capacity: CONFIG.storageCapacity
         });
     }
     return slots;
 }
 
-/* ==== ВСПОМОГАТЕЛЬНОЕ ==== */
 function isAdjacentToPlayer(loc) {
     const { cols, rows } = CONFIG.map;
     const neighbors = [];
@@ -198,11 +217,11 @@ function isAdjacentOpenForest(cell) {
     return neighbors.some(idx => state.forestMap[idx].open);
 }
 
-/* ==== HUD ==== */
 function renderResources() {
     document.getElementById('r-food').textContent = state.resources.food;
     document.getElementById('r-wood').textContent = state.resources.wood;
-    document.getElementById('r-gold').textContent = state.resources.gold;
+    document.getElementById('r-honey').textContent = state.resources.honey;
+    document.getElementById('r-wax').textContent = state.resources.wax;
 }
 
 function log(msg) {
@@ -236,7 +255,6 @@ function closeModal() {
     document.getElementById('modal').classList.remove('open');
 }
 
-/* ==== ЭКРАН ЭПОХИ ==== */
 function renderEra() {
     const era = CONFIG.eras[state.currentEra];
     document.getElementById('era-title').textContent = era.title;
@@ -257,7 +275,6 @@ function renderEra() {
     showScreen('screen-era');
 }
 
-/* ==== ЭКРАН РЕГИОНА ==== */
 function openRegion(regionId) {
     const era = CONFIG.eras[state.currentEra];
     const region = era.regions.find(r => r.id === regionId);
@@ -294,12 +311,11 @@ function backToRegion() {
     renderEra();
 }
 
-/* ==== ЭКРАН МИССИИ ==== */
 function openMission(missionId) {
     state.currentMission = missionId;
     state.missionMap = generateMissionMap();
-    state.missionStarted = true;
-
+    state.forestMap = [];
+    state.forestStorage = [];
     document.getElementById('mission-task-text').textContent = '📜 Построить базу';
     renderMissionMap();
     showScreen('screen-mission');
@@ -367,6 +383,17 @@ function onLocClick(loc) {
         addActionBtn(btns, '🌾 Открыть поле', () => { closeActionPanel(); openField(); }, true);
     } else if (loc.id === 'forest' && loc.owner === 'player') {
         addActionBtn(btns, '🌲 Открыть лес', () => { closeActionPanel(); openForest(); }, true);
+        if (state.forestStorage.length > 0) {
+            const info = state.forestStorage
+                .filter(s => s.built && s.resource && s.resource !== 'nothing' && s.amount > 0)
+                .map(s => {
+                    const res = RESOURCE_LIST.find(r => r.id === s.resource);
+                    return `${res.icon} ${s.amount}/${s.capacity}`;
+                }).join(' · ');
+            if (info) {
+                addActionBtn(btns, `📦 ${info}`, () => {}, false);
+            }
+        }
     } else if (loc.owner === 'player') {
         addActionBtn(btns, '✅ Под контролем', () => {}, false);
     } else {
@@ -389,221 +416,4 @@ function closeActionPanel() {
     document.getElementById('action-panel').classList.remove('open');
 }
 
-function scoutLoc(loc) {
-    if (state.resources.food < CONFIG.costs.scoutLoc) { log('Недостаточно еды.'); return; }
-    state.resources.food -= CONFIG.costs.scoutLoc;
-    loc.scouted = true;
-    loc.owner = 'player';
-    renderResources();
-    renderMissionMap();
-    closeActionPanel();
-    log(`Разведана локация «${loc.name}».`);
-}
-
-function buildBase(loc) {
-    if (state.resources.wood < CONFIG.costs.buildBase) { log('Недостаточно древесины.'); return; }
-    state.resources.wood -= CONFIG.costs.buildBase;
-    loc.baseBuilt = true;
-    renderResources();
-    renderMissionMap();
-    closeActionPanel();
-    log('База построена!');
-}
-
-/* ==== ПОЛЕ ==== */
-function openField() {
-    state.fieldMap = generateFieldMap();
-    renderField();
-    showScreen('screen-field');
-}
-
-function renderField() {
-    const cont = document.getElementById('field-grid');
-    cont.innerHTML = '';
-    state.fieldMap.forEach(cell => {
-        const div = document.createElement('div');
-        div.className = 'cell';
-        if (cell.fog) { div.classList.add('fog'); div.textContent = '🌫️'; }
-        else if (cell.type !== 'empty') {
-            const t = CELL_TYPES[cell.type];
-            div.classList.add(t.class);
-            div.textContent = t.icon;
-        }
-        div.onclick = () => onFieldCellClick(cell);
-        cont.appendChild(div);
-    });
-}
-
-function onFieldCellClick(cell) {
-    if (cell.fog) {
-        if (state.resources.food < CONFIG.costs.openCell) { log('Недостаточно еды.'); return; }
-        state.resources.food -= CONFIG.costs.openCell;
-        cell.fog = false;
-        renderResources();
-        renderField();
-        return;
-    }
-    if (cell.type === 'empty') {
-        const body = document.getElementById('modal-body');
-        body.innerHTML = '';
-        const btn1 = document.createElement('button');
-        btn1.className = 'btn';
-        btn1.textContent = '🏚️ Амбар';
-        btn1.onclick = () => { cell.type = 'granary'; renderField(); closeModal(); };
-        const btn2 = document.createElement('button');
-        btn2.className = 'btn';
-        btn2.textContent = '🌱 Грядка';
-        btn2.onclick = () => { cell.type = 'field'; renderField(); closeModal(); };
-        body.appendChild(btn1);
-        body.appendChild(btn2);
-        showModal('Клетка', '');
-        return;
-    }
-    if (cell.type === 'field' && !cell.ready) {
-        cell.ready = true;
-        renderField();
-        log('Грядка созрела.');
-    }
-}
-
-/* ==== ЛЕС (НОВАЯ ЛОГИКА) ==== */
-function openForest() {
-    state.forestMap = generateForestMap();
-    state.forestStorage = generateStorage();
-    renderForest();
-    renderStorage();
-    showScreen('screen-forest');
-    log('Лес открыт. Открывайте клетки и назначайте крестьян.');
-}
-
-function renderForest() {
-    const cont = document.getElementById('forest-grid');
-    cont.innerHTML = '';
-    state.forestMap.forEach(cell => {
-        const div = document.createElement('div');
-        div.className = 'cell';
-        if (!cell.open) { div.classList.add('fog'); div.textContent = '🌫️'; }
-        else if (cell.hasResource && cell.worker) {
-            div.classList.add(cell.ready ? 'ready' : 'building');
-            div.textContent = cell.ready ? '🪵' : '👷';
-        } else if (cell.hasResource) {
-            div.classList.add('building');
-            div.textContent = '🌲';
-        }
-        div.onclick = () => onForestCellClick(cell);
-        cont.appendChild(div);
-    });
-}
-
-function renderStorage() {
-    const cont = document.getElementById('forest-storage');
-    cont.innerHTML = '';
-    state.forestStorage.forEach(slot => {
-        const div = document.createElement('div');
-        div.className = 'storage-slot';
-        if (slot.built) div.classList.add('built');
-        if (slot.amount > 0) div.classList.add('filled');
-        div.textContent = slot.built ? (slot.amount > 0 ? `🪵${slot.amount}` : '🏭') : '';
-        div.onclick = () => onStorageClick(slot);
-        cont.appendChild(div);
-    });
-}
-
-function onForestCellClick(cell) {
-    if (!cell.open) {
-        if (!isAdjacentOpenForest(cell)) { log('Можно открывать только соседние клетки.'); return; }
-        if (state.resources.food < CONFIG.costs.openCell) { log('Недостаточно еды.'); return; }
-        state.resources.food -= CONFIG.costs.openCell;
-        cell.open = true;
-        renderResources();
-        renderForest();
-        return;
-    }
-
-    if (cell.hasResource && !cell.worker) {
-        showModal('Крестьянин', 'Назначить крестьянина на добычу?', '');
-        const body = document.getElementById('modal-body');
-        body.innerHTML = '';
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.textContent = '👷 Назначить';
-        btn.onclick = () => {
-            cell.worker = true;
-            renderForest();
-            closeModal();
-            log('Крестьянин назначен.');
-        };
-        body.appendChild(btn);
-        return;
-    }
-
-    if (cell.hasResource && cell.worker && !cell.ready) {
-        cell.ready = true;
-        renderForest();
-        log('Ресурс добыт. Можно тащить в склад.');
-        return;
-    }
-
-    if (cell.ready && cell.stored > 0) {
-        showModal('Ресурс', 'Переместить в склад?', '');
-        const body = document.getElementById('modal-body');
-        body.innerHTML = '';
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.textContent = '📦 В склад';
-        btn.onclick = () => {
-            const freeSlot = state.forestStorage.find(s => s.built && s.resource === 'wood' && s.amount < s.capacity);
-            if (!freeSlot) { log('Нет свободного места в складе.'); closeModal(); return; }
-            const amount = Math.min(5, freeSlot.capacity - freeSlot.amount);
-            freeSlot.amount += amount;
-            cell.ready = false;
-            cell.worker = false;
-            cell.stored = 0;
-            renderStorage();
-            renderForest();
-            closeModal();
-            log(`Перемещено ${amount} древесины в склад.`);
-        };
-        body.appendChild(btn);
-        return;
-    }
-}
-
-function onStorageClick(slot) {
-    if (!slot.built) {
-        if (state.resources.wood < CONFIG.costs.buildStorage) { log('Недостаточно древесины.'); return; }
-        state.resources.wood -= CONFIG.costs.buildStorage;
-        slot.built = true;
-        slot.resource = 'wood';
-        renderStorage();
-        renderResources();
-        log('Склад построен.');
-        return;
-    }
-    if (slot.amount > 0) {
-        const body = document.getElementById('modal-body');
-        body.innerHTML = '';
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.textContent = '🚚 Вывезти на базу';
-        btn.onclick = () => {
-            state.resources.wood += slot.amount;
-            slot.amount = 0;
-            renderResources();
-            renderStorage();
-            closeModal();
-            log('Древесина вывезена на базу.');
-        };
-        body.appendChild(btn);
-        showModal('Склад', '');
-    }
-}
-
-/* ==== ПРОЧЕЕ ==== */
-function backToMission() {
-    renderMissionMap();
-    showScreen('screen-mission');
-}
-
-renderEra();
-renderResources();
+function

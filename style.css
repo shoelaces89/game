@@ -29,79 +29,197 @@ html, body {
     border-bottom: 2px solid #6b5a2e;
     font-size: 13px;
     flex-shrink: 0;
+    z-index: 20;
 }
 
-#hud .res { display: flex; gap: 10px; }
-#hud .res span { white-space: nowrap; }
+.hud-left { display: flex; gap: 8px; }
 
-#patriot-bar {
-    height: 6px;
-    background: #3a2a1a;
-    flex-shrink: 0;
+#menu-btn {
+    background: none;
+    border: 1px solid #6b5a2e;
+    color: #f0d060;
+    font-size: 18px;
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    cursor: pointer;
 }
 
-#patriot-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #6b3a3a, #d0a040, #6ba040);
-    width: 100%;
-    transition: width 0.3s;
+.hud-res { display: flex; gap: 10px; }
+.hud-res span { white-space: nowrap; }
+
+#menu-panel {
+    position: absolute;
+    top: 50px;
+    left: 8px;
+    background: #1f1a10;
+    border: 2px solid #6b5a2e;
+    border-radius: 6px;
+    padding: 6px;
+    z-index: 30;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 160px;
 }
+
+#menu-panel.open { display: flex; }
+
+.menu-item {
+    background: none;
+    border: none;
+    color: #e8e0c8;
+    font-family: Georgia, serif;
+    font-size: 14px;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.menu-item:active { background: #3a3020; }
 
 .screen {
     flex: 1;
     display: none;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
 }
 
 .screen.active { display: flex; }
 
-#briefing {
-    padding: 24px 20px;
-    overflow-y: auto;
+/* ==== ЭКРАН ЭПОХИ ==== */
+#era-map {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    padding: 20px;
+    position: relative;
+}
+
+#era-swipe-hint {
+    position: absolute;
+    top: 12px;
+    font-size: 12px;
+    color: #8a8060;
+}
+
+#era-title {
+    font-size: 22px;
+    color: #f0d060;
+    margin-bottom: 24px;
     text-align: center;
 }
 
-#briefing h1 {
-    font-size: 22px;
-    color: #f0d060;
-    margin-bottom: 16px;
+#era-regions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 320px;
 }
 
-#briefing p {
-    font-size: 15px;
-    line-height: 1.6;
-    margin-bottom: 12px;
+.region-card {
+    background: #4a4438;
+    border: 2px solid #6b5a2e;
+    border-radius: 8px;
+    padding: 16px;
+    cursor: pointer;
+    transition: transform 0.1s;
+    text-align: center;
+}
+
+.region-card:active { transform: scale(0.97); }
+
+.region-card.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.region-card .rc-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+.region-card .rc-desc { font-size: 12px; color: #b0a890; }
+
+/* ==== ЭКРАН РЕГИОНА ==== */
+#region-info-bar {
+    background: #1f1a10;
+    border-bottom: 1px solid #6b5a2e;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #f0d060;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#region-info-full {
+    background: #2a2418;
+    padding: 0 14px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s, padding 0.3s;
+    font-size: 13px;
+    line-height: 1.5;
     color: #d8d0b8;
 }
 
-#briefing .tasks-preview {
-    text-align: left;
-    background: #1f1a10;
-    padding: 12px 16px;
-    border-left: 3px solid #6b5a2e;
-    margin: 16px 0;
-    font-size: 13px;
-    line-height: 1.8;
-    width: 100%;
+#region-info-full.open {
+    max-height: 200px;
+    padding: 12px 14px;
 }
 
-#map-screen { padding: 8px; overflow: hidden; }
+#region-missions {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
 
-#map-scroll {
+.mission-card {
+    background: #4a4438;
+    border: 2px solid #6b5a2e;
+    border-radius: 6px;
+    padding: 14px;
+    cursor: pointer;
+}
+
+.mission-card:active { transform: scale(0.98); }
+
+.mission-card.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.mission-card .mc-title { font-size: 15px; font-weight: bold; margin-bottom: 4px; }
+.mission-card .mc-status { font-size: 11px; color: #b0a890; }
+
+/* ==== ЭКРАН МИССИИ ==== */
+#mission-task {
+    background: rgba(31, 26, 16, 0.95);
+    border-bottom: 1px solid #6b5a2e;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #f0d060;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+#mission-map-wrapper {
     flex: 1;
     overflow: auto;
-    -webkit-overflow-scrolling: touch;
+    padding: 8px;
 }
 
-#map-grid {
+#mission-map {
     display: grid;
     grid-template-columns: repeat(4, 100px);
     grid-template-rows: repeat(5, 100px);
     gap: 6px;
-    padding: 4px;
 }
 
 .loc {
@@ -120,39 +238,106 @@ html, body {
 
 .loc:active { transform: scale(0.95); }
 .loc.player { background: #3a5a3a; border-color: #6ba040; }
-.loc.fog { background: #2a2418; border-style: dashed; color: #6b5a2e; }
-.loc.fog .loc-name { color: #6b5a2e; }
+.loc.fog { background: #2a2418; border-style: dashed; }
+.loc.locked { opacity: 0.4; cursor: not-allowed; }
 
 .loc .loc-icon { font-size: 26px; margin-bottom: 2px; }
 .loc .loc-name { font-size: 12px; font-weight: bold; text-align: center; }
 .loc .loc-status { font-size: 9px; opacity: 0.7; margin-top: 2px; }
 
-.loc.locked {
-    opacity: 0.4;
-    cursor: not-allowed;
+.btn-back {
+    background: #4a3a2a;
+    border-radius: 0;
+    margin: 0;
 }
 
-.loc.locked .loc-icon { filter: grayscale(1); }
-
-.loc.locked .loc-status {
-    color: #6b3a3a;
-    font-style: italic;
+/* ==== МИНИ-ЭКРАНЫ (ПОЛЕ / ЛЕС) ==== */
+.mini-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #1f1a10;
+    border-bottom: 2px solid #6b5a2e;
+    font-size: 15px;
+    color: #f0d060;
+    flex-shrink: 0;
 }
 
-#current-task {
-    position: absolute;
-    top: 50px; left: 8px; right: 8px;
-    background: rgba(31, 26, 16, 0.95);
+.btn-small {
+    width: auto;
+    padding: 6px 12px;
+    font-size: 13px;
+    margin: 0;
+}
+
+#field-grid, #forest-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 3px;
+    padding: 6px;
+    overflow: auto;
+}
+
+.cell {
+    background: #4a3a2a;
     border: 1px solid #6b5a2e;
     border-radius: 4px;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: #f0d060;
-    z-index: 8;
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 20px;
+    cursor: pointer;
+    position: relative;
+    aspect-ratio: 1;
 }
 
-#action-panel {
+.cell:active { transform: scale(0.95); }
+
+.cell.fog {
+    background: #1a1810;
+    border-style: dashed;
+    color: #3a3020;
+    font-size: 14px;
+}
+
+.cell.building {
+    background: #5a4a2a;
+}
+
+.cell.ready {
+    background: #6ba040;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(107,160,64,0.7); }
+    50% { box-shadow: 0 0 0 6px rgba(107,160,64,0); }
+}
+
+.export-zone {
+    background: #3a2a1a;
+    border-top: 2px solid #6b5a2e;
+    padding: 12px;
+    text-align: center;
+    font-size: 13px;
+    color: #f0d060;
+    flex-shrink: 0;
+    min-height: 60px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.2s;
+}
+
+.export-zone.hover {
+    background: #5a4a2a;
+    border-color: #f0d060;
+}
+
+#field-panel, #forest-panel {
     position: absolute;
     bottom: 0; left: 0; right: 0;
     background: #1f1a10;
@@ -163,21 +348,9 @@ html, body {
     z-index: 10;
 }
 
-#action-panel.open { transform: translateY(0); }
+#field-panel.open, #forest-panel.open { transform: translateY(0); }
 
-#action-title {
-    font-size: 16px;
-    color: #f0d060;
-    margin-bottom: 10px;
-}
-
-#action-desc {
-    font-size: 12px;
-    color: #b0a890;
-    margin-bottom: 12px;
-    line-height: 1.5;
-}
-
+/* ==== КНОПКИ ==== */
 .btn {
     display: block;
     width: 100%;
@@ -194,33 +367,12 @@ html, body {
 }
 
 .btn:active { background: #8a7040; }
-
-.btn:disabled {
-    background: #3a3020;
-    color: #6b5a2e;
-    cursor: not-allowed;
-}
-
+.btn:disabled { background: #3a3020; color: #6b5a2e; cursor: not-allowed; }
 .btn-primary { background: #6ba040; }
 .btn-primary:active { background: #8ac060; }
 .btn-close { background: #4a3a2a; }
 
-#log {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    max-height: 80px;
-    overflow-y: auto;
-    background: rgba(31, 26, 16, 0.95);
-    border-top: 1px solid #3a3020;
-    padding: 6px 12px;
-    font-size: 11px;
-    line-height: 1.5;
-    z-index: 5;
-    pointer-events: none;
-}
-
-#log div { margin-bottom: 2px; }
-
+/* ==== МОДАЛКА ==== */
 #modal {
     position: absolute;
     inset: 0;
@@ -229,7 +381,7 @@ html, body {
     justify-content: center;
     align-items: center;
     padding: 20px;
-    z-index: 20;
+    z-index: 40;
 }
 
 #modal.open { display: flex; }
@@ -238,21 +390,40 @@ html, body {
     background: #2a2418;
     border: 2px solid #6b5a2e;
     border-radius: 8px;
-    padding: 24px 20px;
-    max-width: 360px;
+    padding: 20px;
+    max-width: 340px;
     width: 100%;
-    text-align: center;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 #modal-content h2 {
-    font-size: 20px;
+    font-size: 18px;
     color: #f0d060;
     margin-bottom: 12px;
+    text-align: center;
 }
 
-#modal-content p {
+#modal-body {
     font-size: 14px;
-    line-height: 1.6;
-    margin-bottom: 16px;
+    line-height: 1.5;
     color: #d8d0b8;
+    margin-bottom: 16px;
 }
+
+/* ==== ЛОГ ==== */
+#log {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    max-height: 60px;
+    overflow-y: auto;
+    background: rgba(31, 26, 16, 0.95);
+    border-top: 1px solid #3a3020;
+    padding: 4px 12px;
+    font-size: 10px;
+    line-height: 1.4;
+    z-index: 5;
+    pointer-events: none;
+}
+
+#log div { margin-bottom: 2px; }

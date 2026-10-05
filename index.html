@@ -1,70 +1,106 @@
 <!DOCTYPE html>
 <html lang="ru">
-    <head>
+<head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Историческая игра — Миссия 1</title>
-<link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Историческая игра</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <div id="app">
 
+    <!-- HUD -->
     <div id="hud">
-        <div class="res">
+        <div class="hud-left">
+            <button id="menu-btn" onclick="toggleMenu()">☰</button>
+        </div>
+        <div class="hud-res">
             <span>🍞 <b id="r-food">0</b></span>
             <span>🪵 <b id="r-wood">0</b></span>
             <span>🪙 <b id="r-gold">0</b></span>
         </div>
-        <div>❤️ <b id="r-patriot">100</b></div>
-    </div>
-    <div id="patriot-bar"><div id="patriot-fill"></div></div>
-
-    <div class="screen active" id="briefing">
-        <h1>Миссия 1: Земля предков</h1>
-        <p>Ты — воевода, которому поручено основать поселение на диких землях. Вокруг — лес, поле и село, но они под туманом войны.</p>
-        <p>Начни с постройки базы, разведай окрестности и наладь производство.</p>
-        <div class="tasks-preview">
-            <b>Задачи:</b><br>
-            ☐ Построить базу<br>
-            ☐ Провести разведку местности<br>
-            ☐ Произвести еду ×5<br>
-            ☐ Добыть древесину ×5<br>
-            ☐ Построить здание в селе<br>
-            ☐ Построить здание в городе<br>
-            ☐ Произвести полуфабрикат в селе<br>
-            ☐ Произвести товар в городе
-        </div>
-        <button class="btn btn-primary" onclick="startMission()">Начать</button>
     </div>
 
-    <div class="screen" id="map-screen">
-        <div id="map-scroll">
-            <div id="map-grid"></div>
+    <!-- Выпадающее меню -->
+    <div id="menu-panel">
+        <button class="menu-item" onclick="showSettings()">⚙️ Настройки</button>
+        <button class="menu-item" onclick="showSave()">💾 Сохранить</button>
+        <button class="menu-item" onclick="showExit()">🚪 Выход</button>
+    </div>
+
+    <!-- ЭКРАН 1: ЭПОХА -->
+    <div class="screen active" id="screen-era">
+        <div id="era-map">
+            <div id="era-swipe-hint">← свайп →</div>
+            <div id="era-title">Эпоха 1: Киевская Русь</div>
+            <div id="era-regions"></div>
         </div>
     </div>
 
-    <div id="current-task">
-        <span id="task-text">—</span>
+    <!-- ЭКРАН 2: РЕГИОН -->
+    <div class="screen" id="screen-region">
+        <div id="region-info-bar" onclick="toggleRegionInfo()">
+            <span id="region-info-short">Киевская земля · 0/5 миссий</span>
+            <span id="region-info-toggle">▼</span>
+        </div>
+        <div id="region-info-full">
+            <p>Регион «Киевская земля». Начни с малого — построй базу и разведай окрестности.</p>
+        </div>
+        <div id="region-missions"></div>
     </div>
 
-    <div id="action-panel">
-        <div id="action-title"></div>
-        <div id="action-desc"></div>
-        <div id="action-buttons"></div>
-        <button class="btn btn-close" onclick="closeActionPanel()">Отмена</button>
+    <!-- ЭКРАН 3: МИССИЯ (КАРТА) -->
+    <div class="screen" id="screen-mission">
+        <div id="mission-task">
+            <span id="mission-task-text">—</span>
+        </div>
+        <div id="mission-map-wrapper">
+            <div id="mission-map"></div>
+        </div>
+        <button class="btn btn-back" onclick="backToRegion()">← Назад к региону</button>
     </div>
 
-    <div id="log"></div>
+    <!-- ЭКРАН 4: ПОЛЕ -->
+    <div class="screen" id="screen-field">
+        <div class="mini-header">
+            <button class="btn btn-small" onclick="backToMission()">← Назад</button>
+            <span>🌾 Поле</span>
+        </div>
+        <div id="field-grid"></div>
+        <div id="field-export" class="export-zone">
+            <span>🚚 Зона вывоза</span>
+        </div>
+        <div id="field-panel"></div>
+    </div>
 
+    <!-- ЭКРАН 5: ЛЕС -->
+    <div class="screen" id="screen-forest">
+        <div class="mini-header">
+            <button class="btn btn-small" onclick="backToMission()">← Назад</button>
+            <span>🌲 Лес</span>
+        </div>
+        <div id="forest-grid"></div>
+        <div id="forest-export" class="export-zone">
+            <span>🚚 Зона вывоза</span>
+        </div>
+        <div id="forest-panel"></div>
+    </div>
+
+    <!-- МОДАЛКА -->
     <div id="modal">
         <div id="modal-content">
             <h2 id="modal-title"></h2>
-            <p id="modal-text"></p>
-            <button class="btn btn-primary" id="modal-btn"></button>
+            <div id="modal-body"></div>
+            <button class="btn btn-close" onclick="closeModal()">Закрыть</button>
         </div>
     </div>
 
+    <!-- ЛОГ -->
+    <div id="log"></div>
+
 </div>
+
 <script src="index.js"></script>
 </body>
 </html>

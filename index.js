@@ -150,9 +150,9 @@ function generateForestMap() {
         let type = 'empty';
         let resource = null;
 
-        if (rand < 0.35) {
+        if (rand < 0.55) {
             type = 'wood'; resource = 'wood';
-        } else if (rand < 0.45) {
+        } else if (rand < 0.7) {
             type = 'beehive'; resource = 'beehive';
         }
 

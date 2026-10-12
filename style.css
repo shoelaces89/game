@@ -269,7 +269,7 @@ html, body {
 
 #forest-storage {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     gap: 4px;
 }
 
@@ -289,9 +289,9 @@ html, body {
 }
 
 .storage-slot.built { background: #5a4a2a; border-style: solid; }
-.storage-slot .st-icon { font-size: 18px; }
-.storage-slot .st-amount { font-size: 10px; color: #d8d0b8; }
-.storage-slot .st-label { font-size: 9px; color: #8a8060; }
+.storage-slot .st-icon { font-size: 16px; }
+.storage-slot .st-amount { font-size: 9px; color: #d8d0b8; }
+.storage-slot .st-label { font-size: 8px; color: #8a8060; }
 
 .cell {
     background: #4a3a2a;

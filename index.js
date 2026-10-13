@@ -8,14 +8,13 @@ const CONFIG = {
         bark: { name: 'Кора', icon: '🪵', start: 0 },
         mushrooms: { name: 'Грибы', icon: '🍄', start: 0 },
         berries: { name: 'Ягоды', icon: '🫐', start: 0 },
-        peasants: { name: 'Крестьяне', icon: '👷', start: 5 }
+        peasants: { name: 'Крестьяне', icon: '👷', start: 100 }
     },
     map: { cols: 4, rows: 5 },
     forest: {
         cols: 6,
         rows: 5,
         totalSquares: 30,
-        resourceSquares: 21,
         amountPerSquare: 75,
         storageCapacity: 100,
         storageSlots: 7,
@@ -29,7 +28,10 @@ const CONFIG = {
     },
     missionTasks: [
         { id: 'buildBase', text: '📜 Построить базу' },
-        { id: 'scout', text: '📜 Разведать территорию' }
+        { id: 'scout', text: '📜 Разведать территорию' },
+        { id: 'openForest', text: '📜 Открыть лес' },
+        { id: 'buildStorage', text: '📜 Построить склад' },
+        { id: 'assignPeasant', text: '📜 Назначить крестьянина' }
     ],
     eras: [
         {
@@ -478,6 +480,7 @@ function openForest() {
     renderForest();
     renderStorage();
     showScreen('screen-forest');
+    if (state.taskIndex === 2) nextTask();
 }
 
 function renderForest() {
@@ -559,7 +562,7 @@ function onForestCellClick(cell) {
     }
 
     if (state.resources.peasants <= 0) {
-        showModal('Нет крестьян', 'Все крестьяне заняты. Дождитесь освобождения или захватите новое село.');
+        showModal('Нет крестьян', 'Все крестьяне заняты.');
         return;
     }
 
@@ -581,6 +584,7 @@ function onForestCellClick(cell) {
         renderForest();
         closeModal();
         startGathering(cell);
+        if (state.taskIndex === 4) nextTask();
     };
     body.appendChild(btn);
     showModal('Добыча', '');
@@ -643,6 +647,7 @@ function onStorageClick(slot) {
             renderResources();
             renderStorage();
             closeModal();
+            if (state.taskIndex === 3) nextTask();
         };
         body.appendChild(btn);
         showModal('Пустая ячейка', '');

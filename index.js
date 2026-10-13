@@ -1,3 +1,7 @@
+// ============================================================
+// ЛЕС — прототип
+// ============================================================
+
 const CONFIG = {
     forest: {
         cols: 6,
@@ -70,7 +74,8 @@ function generateForestMap() {
         const isStart = i === startIndex;
         cells.push({
             index: i,
-            col, row,
+            col: col,
+            row: row,
             open: isStart,
             type: typeId,
             remaining: typeId !== 'empty' ? CONFIG.forest.amountPerSquare : 0,
@@ -102,9 +107,9 @@ function renderResources() {
     document.getElementById('r-peasants').textContent = state.resources.peasants;
 }
 
-function showModal(title, body) {
+function showModal(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-body').innerHTML = body;
+    document.getElementById('modal-body').innerHTML = bodyHtml;
     document.getElementById('modal').classList.add('open');
 }
 
@@ -115,7 +120,8 @@ function closeModal() {
 function renderForest() {
     const cont = document.getElementById('forest-grid');
     cont.innerHTML = '';
-    state.forestMap.forEach(cell => {
+    for (let i = 0; i < state.forestMap.length; i++) {
+        const cell = state.forestMap[i];
         const div = document.createElement('div');
         div.className = 'cell';
 
@@ -134,42 +140,54 @@ function renderForest() {
             }
         }
 
-        div.onclick = () => onCellClick(cell);
+        div.onclick = (function(c) {
+            return function() { onCellClick(c); };
+        })(cell);
+
         cont.appendChild(div);
-    });
+    }
 }
 
 function renderStorage() {
     const cont = document.getElementById('forest-storage');
     cont.innerHTML = '';
-    state.forestStorage.forEach(slot => {
+    for (let i = 0; i < state.forestStorage.length; i++) {
+        const slot = state.forestStorage[i];
         const div = document.createElement('div');
         div.className = 'storage-slot';
+
         if (slot.built) {
             div.classList.add('built');
             const res = RESOURCE_NAMES[slot.resource] || RESOURCE_NAMES.nothing;
-            div.innerHTML = `
-        <div class="st-icon">${res.icon}</div>
-        <div class="st-amount">${slot.amount}/${slot.capacity}</div>
-        <div class="st-label">${res.name}</div>
-      `;
+            div.innerHTML =
+                '<div class="st-icon">' + res.icon + '</div>' +
+                '<div class="st-amount">' + slot.amount + '/' + slot.capacity + '</div>' +
+                '<div class="st-label">' + res.name + '</div>';
         } else {
             const cost = CONFIG.storageCost[slot.index];
-            div.innerHTML = `<div class="st-amount">${cost}🪵</div>`;
+            div.innerHTML = '<div class="st-amount">' + cost + '🪵</div>';
         }
-        div.onclick = () => onStorageClick(slot);
+
+        div.onclick = (function(s) {
+            return function() { onStorageClick(s); };
+        })(slot);
+
         cont.appendChild(div);
-    });
+    }
 }
 
 function isAdjacentOpen(cell) {
-    const { cols, rows } = CONFIG.forest;
+    const cols = CONFIG.forest.cols;
+    const rows = CONFIG.forest.rows;
     const neighbors = [];
     if (cell.col > 0)        neighbors.push(cell.index - 1);
     if (cell.col < cols - 1) neighbors.push(cell.index + 1);
     if (cell.row > 0)        neighbors.push(cell.index - cols);
     if (cell.row < rows - 1) neighbors.push(cell.index + cols);
-    return neighbors.some(idx => state.forestMap[idx].open);
+    for (let i = 0; i < neighbors.length; i++) {
+        if (state.forestMap[neighbors[i]].open) return true;
+    }
+    return false;
 }
 
 function onCellClick(cell) {
@@ -203,15 +221,15 @@ function onCellClick(cell) {
 
 function showGatherMenu(cell) {
     const res = FOREST_RESOURCES[cell.type];
-    const body = `
-    <div style="margin-bottom:10px; font-size:13px; color:#b0a890;">
-      Ресурс: ${res.icon}. Осталось: ${cell.remaining} ед.
-    </div>
-    <button class="btn btn-primary" id="gather-btn">👷 Добывать</button>
-  `;
-    showModal('Добыча', body);
+    const html =
+        '<div style="margin-bottom:10px; font-size:13px; color:#b0a890;">' +
+        'Ресурс: ' + res.icon + '. Осталось: ' + cell.remaining + ' ед.' +
+        '</div>' +
+        '<button class="btn btn-primary" id="gather-btn">👷 Добывать</button>';
 
-    document.getElementById('gather-btn').onclick = () => {
+    showModal('Добыча', html);
+
+    document.getElementById('gather-btn').onclick = function() {
         if (state.resources.peasants <= 0) {
             closeModal();
             showModal('Нет крестьян', 'Все крестьяне заняты.');
@@ -227,15 +245,15 @@ function showGatherMenu(cell) {
 }
 
 function showWorkerMenu(cell) {
-    const body = `
-    <div style="margin-bottom:10px; font-size:13px; color:#b0a890;">
-      Крестьянин работает. Осталось: ${cell.remaining} ед.
-    </div>
-    <button class="btn" id="stop-btn">⏹️ Снять крестьянина</button>
-  `;
-    showModal('Крестьянин', body);
+    const html =
+        '<div style="margin-bottom:10px; font-size:13px; color:#b0a890;">' +
+        'Крестьянин работает. Осталось: ' + cell.remaining + ' ед.' +
+        '</div>' +
+        '<button class="btn" id="stop-btn">⏹️ Снять крестьянина</button>';
 
-    document.getElementById('stop-btn').onclick = () => {
+    showModal('Крестьянин', html);
+
+    document.getElementById('stop-btn').onclick = function() {
         cell.worker = false;
         state.resources.peasants += 1;
         stopGathering(cell);
@@ -247,7 +265,8 @@ function showWorkerMenu(cell) {
 
 function startGathering(cell) {
     if (state.gatherTimers[cell.index]) return;
-    state.gatherTimers[cell.index] = setInterval(() => {
+
+    state.gatherTimers[cell.index] = setInterval(function() {
         if (cell.remaining <= 0) {
             stopGathering(cell);
             cell.worker = false;
@@ -262,13 +281,16 @@ function startGathering(cell) {
         if (!res) return;
 
         let gathered = false;
-        res.gives.forEach(resId => {
-            const slot = state.forestStorage.find(s => s.built && s.resource === resId && s.amount < s.capacity);
+        for (let i = 0; i < res.gives.length; i++) {
+            const resId = res.gives[i];
+            const slot = state.forestStorage.find(function(s) {
+                return s.built && s.resource === resId && s.amount < s.capacity;
+            });
             if (slot) {
                 slot.amount += 1;
                 gathered = true;
             }
-        });
+        }
 
         if (gathered) {
             cell.remaining -= 1;
@@ -288,16 +310,16 @@ function stopGathering(cell) {
 function onStorageClick(slot) {
     if (!slot.built) {
         const cost = CONFIG.storageCost[slot.index];
-        const body = `
-      <div style="margin-bottom:10px; font-size:13px; color:#b0a890;">
-        Построить склад за ${cost} 🪵?
-      </div>
-      <button class="btn btn-primary" id="build-btn" ${state.resources.wood < cost ? 'disabled' : ''}>
-        🏭 Построить склад
-      </button>
-    `;
-        showModal('Пустая ячейка', body);
-        document.getElementById('build-btn').onclick = () => {
+        const disabled = state.resources.wood < cost ? 'disabled' : '';
+        const html =
+            '<div style="margin-bottom:10px; font-size:13px; color:#b0a890;">' +
+            'Построить склад за ' + cost + ' 🪵?' +
+            '</div>' +
+            '<button class="btn btn-primary" id="build-btn" ' + disabled + '>🏭 Построить склад</button>';
+
+        showModal('Пустая ячейка', html);
+
+        document.getElementById('build-btn').onclick = function() {
             if (state.resources.wood < cost) return;
             state.resources.wood -= cost;
             slot.built = true;
@@ -314,18 +336,24 @@ function onStorageClick(slot) {
 }
 
 function showStorageResourceMenu(slot) {
-    let body = '<div style="margin-bottom:10px; font-size:13px; color:#b0a890;">Выберите ресурс:</div>';
-    Object.keys(RESOURCE_NAMES).forEach(resId => {
+    let html = '<div style="margin-bottom:10px; font-size:13px; color:#b0a890;">Выберите ресурс:</div>';
+
+    const keys = Object.keys(RESOURCE_NAMES);
+    for (let i = 0; i < keys.length; i++) {
+        const resId = keys[i];
         const res = RESOURCE_NAMES[resId];
         const selected = slot.resource === resId ? ' btn-primary' : '';
-        body += `<button class="btn${selected}" data-res="${resId}">${res.icon} ${res.name}</button>`;
-    });
-    body += '<button class="btn btn-close" onclick="closeModal()">Отмена</button>';
-    showModal('Настройка склада', body);
+        html += '<button class="btn' + selected + '" data-res="' + resId + '">' + res.icon + ' ' + res.name + '</button>';
+    }
 
-    document.querySelectorAll('#modal-body button[data-res]').forEach(btn => {
-        btn.onclick = () => {
-            const resId = btn.getAttribute('data-res');
+    html += '<button class="btn btn-close" id="cancel-btn">Отмена</button>';
+
+    showModal('Настройка склада', html);
+
+    const buttons = document.querySelectorAll('#modal-body button[data-res]');
+    for (let i = 0; i < buttons.length; i++) {
+        buttons[i].onclick = function() {
+            const resId = this.getAttribute('data-res');
             if (slot.resource !== resId) {
                 slot.amount = 0;
             }
@@ -333,11 +361,17 @@ function showStorageResourceMenu(slot) {
             renderStorage();
             closeModal();
         };
-    });
+    }
+
+    document.getElementById('cancel-btn').onclick = closeModal;
 }
 
-state.forestMap = generateForestMap();
-state.forestStorage = generateStorage();
-renderResources();
-renderForest();
-renderStorage();
+function init() {
+    state.forestMap = generateForestMap();
+    state.forestStorage = generateStorage();
+    renderResources();
+    renderForest();
+    renderStorage();
+}
+
+init();

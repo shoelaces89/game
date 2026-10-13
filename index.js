@@ -27,6 +27,10 @@ const CONFIG = {
         scoutLoc: 2,
         buildBase: 5
     },
+    missionTasks: [
+        { id: 'buildBase', text: '📜 Построить базу' },
+        { id: 'scout', text: '📜 Разведать территорию' }
+    ],
     eras: [
         {
             id: 'era1',
@@ -83,7 +87,8 @@ const state = {
     forestMap: [],
     forestStorage: [],
     selectedLoc: null,
-    gatherTimers: {}
+    gatherTimers: {},
+    taskIndex: 0
 };
 
 const LOCATION_TYPES = [
@@ -158,23 +163,17 @@ function generateMissionMap() {
 function generateForestMap() {
     const total = CONFIG.forest.totalSquares;
     const cells = [];
-
-    // Собираем список типов: 21 ресурсная + 9 пустых
     const types = [];
     FOREST_RESOURCES.forEach(res => {
         for (let i = 0; i < 3; i++) types.push(res.id);
     });
     while (types.length < total) types.push('empty');
 
-    // Перемешиваем
     for (let i = types.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [types[i], types[j]] = [types[j], types[i]];
     }
 
-    // Стартовая клетка — левый нижний угол (индекс 30? нет — 30 клеток: 0..29)
-    // Сетка 6 колонок × 5 строк. Индекс = row * 6 + col
-    // Левый нижний: row=4, col=0 → индекс 24
     const startIndex = 4 * CONFIG.forest.cols + 0;
 
     for (let i = 0; i < total; i++) {
@@ -188,8 +187,7 @@ function generateForestMap() {
             open: isStart,
             type: typeId,
             remaining: typeId !== 'empty' ? CONFIG.forest.amountPerSquare : 0,
-            worker: false,
-            workerId: null
+            worker: false
         });
     }
     return cells;
@@ -237,12 +235,19 @@ function renderResources() {
     document.getElementById('r-peasants').textContent = state.resources.peasants;
 }
 
-function log(msg) {
-    const el = document.getElementById('log');
-    const div = document.createElement('div');
-    div.textContent = '▸ ' + msg;
-    el.appendChild(div);
-    el.scrollTop = el.scrollHeight;
+function renderTask() {
+    const el = document.getElementById('mission-task-text');
+    const task = CONFIG.missionTasks[state.taskIndex];
+    if (task) {
+        el.textContent = task.text;
+    } else {
+        el.textContent = '📜 Все задачи выполнены';
+    }
+}
+
+function nextTask() {
+    state.taskIndex += 1;
+    renderTask();
 }
 
 function showScreen(id) {
@@ -330,10 +335,10 @@ function openMission(missionId) {
     state.forestMap = [];
     state.forestStorage = [];
     state.gatherTimers = {};
-    document.getElementById('mission-task-text').textContent = '📜 Построить базу';
+    state.taskIndex = 0;
+    renderTask();
     renderMissionMap();
     showScreen('screen-mission');
-    log('Миссия началась. Постройте базу.');
 }
 
 function renderMissionMap() {
@@ -378,7 +383,6 @@ function onLocClick(loc) {
     state.selectedLoc = loc;
 
     if (loc.owner !== 'player' && !loc.scouted && !isAdjacentToPlayer(loc)) {
-        log('Слишком далеко.');
         return;
     }
 
@@ -442,24 +446,24 @@ function closeActionPanel() {
 }
 
 function scoutLoc(loc) {
-    if (state.resources.food < CONFIG.costs.scoutLoc) { log('Недостаточно еды.'); return; }
+    if (state.resources.food < CONFIG.costs.scoutLoc) return;
     state.resources.food -= CONFIG.costs.scoutLoc;
     loc.scouted = true;
     loc.owner = 'player';
     renderResources();
     renderMissionMap();
     closeActionPanel();
-    log(`Разведана локация «${loc.name}».`);
+    if (state.taskIndex === 1) nextTask();
 }
 
 function buildBase(loc) {
-    if (state.resources.wood < CONFIG.costs.buildBase) { log('Недостаточно древесины.'); return; }
+    if (state.resources.wood < CONFIG.costs.buildBase) return;
     state.resources.wood -= CONFIG.costs.buildBase;
     loc.baseBuilt = true;
     renderResources();
     renderMissionMap();
     closeActionPanel();
-    log('База построена!');
+    if (state.taskIndex === 0) nextTask();
 }
 
 function openField() {
@@ -474,7 +478,6 @@ function openForest() {
     renderForest();
     renderStorage();
     showScreen('screen-forest');
-    log('Лес открыт. Открывайте клетки и назначайте крестьян.');
 }
 
 function renderForest() {
@@ -525,8 +528,8 @@ function renderStorage() {
 
 function onForestCellClick(cell) {
     if (!cell.open) {
-        if (!isAdjacentOpenForest(cell)) { log('Можно открывать только соседние клетки.'); return; }
-        if (state.resources.food < CONFIG.forest.unlockCost) { log('Недостаточно еды.'); return; }
+        if (!isAdjacentOpenForest(cell)) return;
+        if (state.resources.food < CONFIG.forest.unlockCost) return;
         state.resources.food -= CONFIG.forest.unlockCost;
         cell.open = true;
         renderResources();
@@ -534,10 +537,7 @@ function onForestCellClick(cell) {
         return;
     }
 
-    if (cell.type === 'empty' || cell.remaining <= 0) {
-        log('Пустая клетка.');
-        return;
-    }
+    if (cell.type === 'empty' || cell.remaining <= 0) return;
 
     if (cell.worker) {
         const body = document.getElementById('modal-body');
@@ -547,15 +547,11 @@ function onForestCellClick(cell) {
         btn.textContent = '⏹️ Снять крестьянина';
         btn.onclick = () => {
             cell.worker = false;
-            if (cell.workerId !== null) {
-                state.resources.peasants += 1;
-            }
-            cell.workerId = null;
+            state.resources.peasants += 1;
             stopGathering(cell);
             renderResources();
             renderForest();
             closeModal();
-            log('Крестьянин снят.');
         };
         body.appendChild(btn);
         showModal('Крестьянин работает', `Осталось: ${cell.remaining}`);
@@ -585,7 +581,6 @@ function onForestCellClick(cell) {
         renderForest();
         closeModal();
         startGathering(cell);
-        log('Крестьянин назначен. Добыча началась.');
     };
     body.appendChild(btn);
     showModal('Добыча', '');
@@ -597,12 +592,10 @@ function startGathering(cell) {
         if (cell.remaining <= 0) {
             stopGathering(cell);
             cell.worker = false;
-            cell.workerId = null;
             state.resources.peasants += 1;
             cell.open = false;
             renderResources();
             renderForest();
-            log('Ресурс закончился. Крестьянин ушёл, квадрат закрыт.');
             return;
         }
 
@@ -621,8 +614,6 @@ function startGathering(cell) {
             cell.remaining -= 1;
             renderStorage();
             renderForest();
-        } else {
-            log('Склад заполнен. Добыча на паузе.');
         }
     }, CONFIG.forest.extractionTimeMs);
 }
@@ -652,7 +643,6 @@ function onStorageClick(slot) {
             renderResources();
             renderStorage();
             closeModal();
-            log('Склад построен.');
         };
         body.appendChild(btn);
         showModal('Пустая ячейка', '');
@@ -675,7 +665,6 @@ function onStorageClick(slot) {
             slot.resource = res.id;
             renderStorage();
             closeModal();
-            log(`Склад: выбран ресурс «${res.name}».`);
         };
         body.appendChild(btn);
     });
@@ -697,3 +686,4 @@ function backToMission() {
 
 renderEra();
 renderResources();
+renderTask();

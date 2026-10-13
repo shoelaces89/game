@@ -423,19 +423,3 @@ html, body {
     color: #d8d0b8;
     margin-bottom: 16px;
 }
-
-#log {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    max-height: 60px;
-    overflow-y: auto;
-    background: rgba(31, 26, 16, 0.95);
-    border-top: 1px solid #3a3020;
-    padding: 4px 12px;
-    font-size: 10px;
-    line-height: 1.4;
-    z-index: 5;
-    pointer-events: none;
-}
-
-#log div { margin-bottom: 2px; }

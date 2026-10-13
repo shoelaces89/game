@@ -317,7 +317,7 @@ html, body {
 
 .cell.building { background: #5a4a2a; }
 .cell.ready { background: #6ba040; animation: pulse 1s infinite; }
-.cell.worker { background: #5a5a2a; }
+.cell.worker { background: #5a5a2a; border-color: #f0d060; }
 
 .cell .cell-amount {
     position: absolute;
@@ -330,20 +330,6 @@ html, body {
 @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(107,160,64,0.7); }
     50% { box-shadow: 0 0 0 6px rgba(107,160,64,0); }
-}
-
-.export-zone {
-    background: #3a2a1a;
-    border-top: 2px solid #6b5a2e;
-    padding: 12px;
-    text-align: center;
-    font-size: 13px;
-    color: #f0d060;
-    flex-shrink: 0;
-    min-height: 60px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
 .btn {

@@ -24,14 +24,14 @@ html, body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 8px 8px; /* Немного уменьшили боковые отступы */
     background: #1f1a10;
     border-bottom: 2px solid #6b5a2e;
-    font-size: 13px;
+    font-size: 12px; /* Уменьшили до 12px для идеальной адаптивности */
     flex-shrink: 0;
 }
 
-.hud-res { display: flex; gap: 10px; }
+.hud-res { display: flex; gap: 8px; } /* Оптимизировали расстояние между иконками */
 .hud-res span { white-space: nowrap; }
 
 #patriot-bar {

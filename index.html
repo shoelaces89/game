@@ -21,6 +21,7 @@
     </div>
     <div id="patriot-bar"><div id="patriot-fill"></div></div>
 
+    <!-- ЭКРАН 1: БРИФИНГ -->
     <div class="screen active" id="briefing">
         <h1>Миссия 1: Земля предков</h1>
         <p>Ты — воевода, которому поручено основать поселение на диких землях. Вокруг — лес, поле и село, но они под туманом войны.</p>
@@ -35,6 +36,7 @@
         <button class="btn btn-primary" onclick="startMission()">Начать</button>
     </div>
 
+    <!-- ЭКРАН 2: ГЛОБАЛЬНАЯ КАРТА -->
     <div class="screen" id="map-screen">
         <div id="map-scroll">
             <div id="map-grid"></div>
@@ -44,6 +46,21 @@
         </div>
     </div>
 
+    <!-- ЭКРАН 3: ВНУТРЕННЯЯ КАРТА ЛЕСА (НОВЫЙ) -->
+    <div class="screen" id="submap-screen">
+        <div id="submap-header">
+            <button class="btn btn-close" id="btn-back-to-map" onclick="backToGlobalMap()">⬅ На карту мира</button>
+            <h2 id="submap-title">Дремучий Лес</h2>
+        </div>
+        <div id="submap-scroll">
+            <div id="submap-grid"></div>
+        </div>
+        <div id="submap-info">
+            <span>Склады: <b id="submap-warehouses">0</b></span>
+        </div>
+    </div>
+
+    <!-- ПАНЕЛЬ ДЕЙСТВИЙ (ОБЩАЯ) -->
     <div id="action-panel">
         <div id="action-title"></div>
         <div id="action-desc"></div>
@@ -51,6 +68,7 @@
         <button class="btn btn-close" onclick="closeActionPanel()">Отмена</button>
     </div>
 
+    <!-- МОДАЛЬНОЕ ОКНО -->
     <div id="modal">
         <div id="modal-content">
             <h2 id="modal-title"></h2>

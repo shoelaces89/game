@@ -91,7 +91,7 @@ function generateMap() {
             owner: i === baseIndex ? 'player' : 'none',
             scouted: i === baseIndex,
             baseBuilt: false,
-            workers: 0 // Количество крестьян, работающих в этой локации
+            workers: 0 // Сюда назначаются крестьяне
         });
     }
     return locs;
@@ -123,12 +123,12 @@ function initState() {
 }
 
 // ============================================================
-// ИГРОВОЙ ТАКТ (ДОБЫЧА И ПАТРИОТИЗМ)
+// ИГРОВОЙ ТАКТ (АВТОМАТИЧЕСКАЯ ДОБЫЧА РЕСУРСОВ)
 // ============================================================
 function gameTick() {
     if (state.gameOver) return;
 
-    // 1. Снижение патриотизма
+    // 1. Убывание патриотизма со временем
     state.patriot -= CONFIG.patriot.decayPerTick;
     if (state.patriot <= CONFIG.patriot.revoltThreshold) {
         state.patriot = 0;
@@ -136,28 +136,42 @@ function gameTick() {
         return;
     }
 
-    // 2. Добыча ресурсов крестьянами в Лесу
-    let gatheredWood = 0;
+    // Variables to track total production in this tick
+    let totalFoodGathered = 0;
+    let totalWoodGathered = 0;
+    let totalGoldGathered = 0;
+
+    // 2. Сбор ресурсов со всех подконтрольных клеток, где есть рабочие
     state.locations.forEach(function(loc) {
-        if (loc.id === 'forest' && loc.owner === 'player' && loc.workers > 0) {
-            // Каждый крестьянин приносит 1 единицу дерева за такт
-            gatheredWood += loc.workers;
+        if (loc.owner === 'player' && loc.workers > 0) {
+            if (loc.id === 'field') {
+                totalFoodGathered += loc.workers; // 1 рабочий = 1 еда
+            } else if (loc.id === 'forest') {
+                totalWoodGathered += loc.workers; // 1 рабочий = 1 дерево
+            } else if (loc.id === 'village') {
+                totalGoldGathered += loc.workers; // 1 рабочий = 1 золото
+            }
         }
     });
 
-    if (gatheredWood > 0) {
-        state.resources.wood += gatheredWood;
-        // Проверка квеста на дерево (добыть древесину x5)
-        if (gatheredWood >= 5) {
-            checkTask('wood5');
-        }
+    // Добавляем добытое в общие ресурсы
+    state.resources.food += totalFoodGathered;
+    state.resources.wood += totalWoodGathered;
+    state.resources.gold += totalGoldGathered;
+
+    // Проверяем выполнение квестов на производство за такт
+    if (totalFoodGathered >= 5) {
+        checkTask('food5');
+    }
+    if (totalWoodGathered >= 5) {
+        checkTask('wood5');
     }
 
     renderResources();
 }
 
 // ============================================================
-// УПРАВЛЕНИЕ КРЕСТЬЯНАМИ В ЛЕСУ
+// РАСПРЕДЕЛЕНИЕ ТРУДА (УПРАВЛЕНИЕ КРЕСТЬЯНАМИ)
 // ============================================================
 function getAssignedPeasantsCount() {
     return state.locations.reduce(function(sum, loc) { return sum + (loc.workers || 0); }, 0);
@@ -170,7 +184,7 @@ function getFreePeasantsCount() {
 function assignPeasant(loc) {
     if (getFreePeasantsCount() > 0) {
         loc.workers++;
-        onLocationClick(loc); // Обновляем панель действий
+        onLocationClick(loc); // Обновляем текст и доступность кнопок в меню
         renderMap();
     }
 }
@@ -178,13 +192,13 @@ function assignPeasant(loc) {
 function removePeasant(loc) {
     if (loc.workers > 0) {
         loc.workers--;
-        onLocationClick(loc); // Обновляем панель действий
+        onLocationClick(loc); // Обновляем текст и доступность кнопок в меню
         renderMap();
     }
 }
 
 // ============================================================
-// ВСПУМОГАТЕЛЬНЫЕ ФУНКЦИИ КВЕСТОВ И РЕСУРСОВ
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================
 function canAfford(cost) {
     for (let res in cost) {
@@ -215,7 +229,7 @@ function checkVictory() {
 }
 
 // ============================================================
-// РЕНДЕР РЕСУРСОВ
+// РЕНДЕР ИНТЕРФЕЙСА
 // ============================================================
 function renderResources() {
     document.getElementById('r-food').textContent = state.resources.food;
@@ -227,9 +241,6 @@ function renderResources() {
     document.getElementById('patriot-fill').style.width = pct + '%';
 }
 
-// ============================================================
-// ТЕКУЩАЯ ЗАДАЧА
-// ============================================================
 function renderCurrentTask() {
     const current = CONFIG.tasks.find(function(t) { return !state.tasks[t.id]; });
     const el = document.getElementById('task-text');
@@ -240,9 +251,6 @@ function renderCurrentTask() {
     }
 }
 
-// ============================================================
-// РЕНДЕР КАРТЫ
-// ============================================================
 function renderMap() {
     const grid = document.getElementById('map-grid');
     grid.innerHTML = '';
@@ -265,7 +273,6 @@ function renderMap() {
 
         const showInfo = loc.scouted || loc.owner === 'player';
 
-        // Отображаем количество работающих крестьян, если они есть
         let workerBadge = '';
         if (loc.owner === 'player' && loc.workers > 0) {
             workerBadge = ' (' + loc.workers + '👨‍🌾)';
@@ -288,7 +295,12 @@ function createLocHandler(loc) {
 function getLocStatus(loc) {
     if (loc.owner === 'player') {
         if (loc.id === 'base' && !loc.baseBuilt) return 'нужно построить базу';
-        if (loc.workers > 0) return 'идет добыча...';
+        if (loc.workers > 0) {
+            if (loc.id === 'field') return 'растим хлеб...';
+            if (loc.id === 'forest') return 'рубим лес...';
+            if (loc.id === 'village') return 'собираем оброк...';
+            return 'работают...';
+        }
         return 'под контролем';
     }
     if (loc.scouted) return 'разведано';
@@ -296,9 +308,6 @@ function getLocStatus(loc) {
     return 'туман войны';
 }
 
-// ============================================================
-// СОСЕДСТВО
-// ============================================================
 function isAdjacentToPlayer(loc) {
     const cols = CONFIG.map.cols;
     const rows = CONFIG.map.rows;
@@ -312,9 +321,8 @@ function isAdjacentToPlayer(loc) {
     }
     return false;
 }
-
 // ============================================================
-// КЛИК ПО ЛОКАЦИИ
+// ВЗАИМОДЕЙСТВИЕ С ЗЕМЛЯМИ И НАЗНАЧЕНИЕ КРЕСТЬЯН
 // ============================================================
 function onLocationClick(loc) {
     if (state.gameOver) return;
@@ -335,21 +343,16 @@ function onLocationClick(loc) {
         desc.textContent = 'Здесь будет ваша главная база. Постройте её, чтобы начать.';
         addBtn(btns, '🏕️ Построить базу (3 🍞, 2 🪵)', function() { buildBase(loc); }, canAfford(CONFIG.costs.buildBase));
     } else if (loc.owner === 'player') {
-        if (loc.id === 'forest') {
-            desc.textContent = 'Локация под вашим контролем. Здесь работают крестьяне и добывают древесину (' + loc.workers + ' на работе).';
-            addBtn(btns, '➕ Назначить крестьянина (Свободно: ' + getFreePeasantsCount() + ')', function() { assignPeasant(loc); }, getFreePeasantsCount() > 0);
-            addBtn(btns, '➖ Убрать крестьянина', function() { removePeasant(loc); }, loc.workers > 0);
-        } else {
-            desc.textContent = 'Локация под вашим контролем. Производство налажено.';
-// Заглушка для ручного производства еды (на Поле / Селе) для выполнения квеста food5
-            if (loc.id === 'field' || loc.id === 'village') {
-                addBtn(btns, '🌾 Собрать еду (Получить 5 🍞)', function() {
-                    state.resources.food += 5;
-                    renderResources();
-                    checkTask('food5');
-                }, true);
-            }
-        }
+// Для любой подконтрольной территории выводим интерфейс управления рабочими
+        let resourceInfo = '';
+        if (loc.id === 'field') resourceInfo = 'производят Еду (🍞)';
+        else if (loc.id === 'forest') resourceInfo = 'добывают Древесину (🪵)';
+        else if (loc.id === 'village') resourceInfo = 'приносят Золото (🪙)';
+        else resourceInfo = 'не приносят ресурсов (пустошь)';
+        desc.textContent = 'Земля под вашим контролем. Назначено крестьян: ' + loc.workers + '. Они ' + resourceInfo + ' каждый такт.';
+// Кнопки добавления и удаления рабочих
+        addBtn(btns, '➕ Назначить крестьянина (Свободно: ' + getFreePeasantsCount() + ')', function() { assignPeasant(loc); }, getFreePeasantsCount() > 0);
+        addBtn(btns, '➖ Убрать крестьянина', function() { removePeasant(loc); }, loc.workers > 0);
     } else {
         desc.textContent = 'Разведано. Вы можете присоединить эту землю к своим владениям.';
         addBtn(btns, '🚩 Присоединить земли', function() {
@@ -370,7 +373,7 @@ function addBtn(container, label, onClick, enabled) {
     container.appendChild(btn);
 }
 // ============================================================
-// ИГРОВЫЕ ДЕЙСТВИЯ
+// УПРАВЛЕНИЕ ИГРОВЫМИ ДЕЙСТВИЯМИ
 // ============================================================
 function startMission() {
     document.getElementById('briefing').classList.remove('active');
@@ -381,7 +384,6 @@ function scoutLocation(loc) {
     if (state.resources.food >= CONFIG.costs.scout.food) {
         state.resources.food -= CONFIG.costs.scout.food;
         loc.scouted = true;
-// Проверяем, разведана ли хотя бы одна клетка помимо базы
         const anyScouted = state.locations.some(function(l) { return l.index !== 16 && l.scouted; });
         if (anyScouted) {
             checkTask('scout');
@@ -405,9 +407,6 @@ function closeActionPanel() {
     document.getElementById('action-panel').classList.remove('open');
     state.selectedLoc = null;
 }
-// ============================================================
-// МОДАЛЬНЫЕ ОКНА КОНЦА ИГРЫ
-// ============================================================
 function endGame(isVictory, message) {
     state.gameOver = true;
     if (state.patriotTimer) clearInterval(state.patriotTimer);

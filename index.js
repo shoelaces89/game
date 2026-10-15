@@ -21,6 +21,7 @@ const CONFIG = {
     map: { cols: 4, rows: 5 },
 
     // ТЗ Константы по Лесу
+    // ТЗ Константы по Лесу
     forest: {
         upperWidth: 6,
         upperHeight: 5,
@@ -30,7 +31,7 @@ const CONFIG = {
         warehouseCapacity: 100,
         unlockCostProvision: 1,
         extractionTimeMs: 5000, // 5 секунд из ТЗ
-        warehouseCosts: [10, 12, 14, 16, 18, 20, 22] // Стоимость прогрессии
+        warehouseCosts: [10, 12, 14, 16, 18, 20, 22] // Массив стоимостей из ТЗ 7.3
     },
 
     tasks: [

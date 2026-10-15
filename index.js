@@ -20,8 +20,7 @@ const CONFIG = {
     },
     map: { cols: 4, rows: 5 },
 
-    // ТЗ Константы по Лесу
-    // ТЗ Константы по Лесу
+    // ТЗ Константы по Лесу (Исправлено)
     forest: {
         upperWidth: 6,
         upperHeight: 5,
@@ -30,7 +29,7 @@ const CONFIG = {
         amountPerSquare: 75,
         warehouseCapacity: 100,
         unlockCostProvision: 1,
-        extractionTimeMs: 5000, // 5 секунд из ТЗ
+        extractionTimeMs: 5000,
         warehouseCosts: [10, 12, 14, 16, 18, 20, 22] // Массив стоимостей из ТЗ 7.3
     },
 
@@ -65,43 +64,41 @@ const LOCATION_TYPES = [
 // ============================================================
 const state = {
     resources: { food: 0, wood: 0, gold: 0 },
-    peasants: { total: 0 }, // При старте 0, база даст +5
+    peasants: { total: 0 },
     patriot: CONFIG.patriot.start,
     tasks: {},
     locations: [],
-    selectedLoc: null,       // Глобальная выбранная локация
-    selectedForestTile: null,// Выбранный лесной тайл (верхний или нижний)
-    currentForestLoc: null,  // Ссылка на активный глобальный Лес
+    selectedLoc: null,
+    selectedForestTile: null,
+    currentForestLoc: null,
     gameOver: false,
     patriotTimer: null,
-    extractionTimer: null    // Таймер добычи 5 сек
+    extractionTimer: null
 };
 
 // ============================================================
-// ГЕНЕРАЦИЯ ДАННЫХ ЛОКАЦИИ ЛЕСА (ТЗ СЕКЦИИ 3 и 7)
+// ГЕНЕРАЦИЯ ДАННЫХ ЛОКАЦИИ ЛЕСА
 // ============================================================
 function generateForestData() {
     const upperTiles = [];
     const lowerWarehouses = [];
 
-    // Создаем пул ресурсов (21 ресурсный квадрат: 7 типов х 3 шт)
     const pool = [];
     FOREST_RES_TYPES.forEach(type => {
         for (let i = 0; i < 3; i++) {
             pool.push({ id: type.id, name: type.name, icon: type.icon });
         }
     });
-    // Добиваем пустыми до 30
+
     while (pool.length < CONFIG.forest.totalSquares) {
         pool.push({ id: 'empty', name: 'Пустой квадрат леса', icon: '🌿' });
     }
-    // Шаффл
+
     for (let i = pool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [pool[i], pool[j]] = [pool[j], pool[i]];
     }
 
-    // Собираем верхнее поле 6х5
     for (let i = 0; i < CONFIG.forest.totalSquares; i++) {
         const col = i % CONFIG.forest.upperWidth;
         const row = Math.floor(i / CONFIG.forest.upperWidth);
@@ -117,17 +114,16 @@ function generateForestData() {
         });
     }
 
-    // Нижнее поле: 7 пустых слотов под склады
     for (let i = 0; i < 7; i++) {
         lowerWarehouses.push({
             index: i,
             built: false,
-            storedType: 'none', // 'none' или id ресурса
+            storedType: 'none',
             amount: 0
         });
     }
 
-    // Открываем самый первый ряд/левый угол как стартовую точку для снятия тумана войны
+    // Открываем левый верхний тайл как точку входа для разведки
     upperTiles[0].scouted = true;
 
     return { upperTiles, lowerWarehouses };
@@ -138,7 +134,7 @@ function generateMap() {
     const rows = CONFIG.map.rows;
     const total = cols * rows;
     const locs = [];
-    const baseIndex = (rows - 1) * cols + 0; // Левый нижний угол карты
+    const baseIndex = (rows - 1) * cols + 0;
 
     const guaranteed = ['field', 'forest', 'village'];
     const types = guaranteed.slice();
@@ -176,7 +172,7 @@ function generateMap() {
 }
 
 // ============================================================
-// ИНИЦИАЛИЗАЦИЯ И СЧЕТ КРЕСТЬЯН (ТЗ СЕКЦИЯ 6)
+// ИНИЦИАЛИЗАЦИЯ И СЧЕТ КРЕСТЬЯН
 // ============================================================
 function initState() {
     state.resources = {
@@ -236,7 +232,6 @@ function gameTick() {
     renderResources();
 }
 
-// ТЗ Секция 5.2 - 5.5 Автоматическая добыча раз в 5 сек
 function forestExtractionTick() {
     if (state.gameOver) return;
 
@@ -246,7 +241,6 @@ function forestExtractionTick() {
         if (loc.id === 'forest' && loc.owner === 'player' && loc.forestData) {
             loc.forestData.upperTiles.forEach(tile => {
                 if (tile.hasPeasant && tile.amount > 0 && !tile.depleted) {
-                    // Ищем склад, принимающий данный ресурс
                     const warehouse = loc.forestData.lowerWarehouses.find(w => w.built && w.storedType === tile.id && w.amount < CONFIG.forest.warehouseCapacity);
 
                     if (warehouse) {
@@ -254,11 +248,9 @@ function forestExtractionTick() {
                         warehouse.amount++;
                         updateRequired = true;
 
-                        // Проверка выполнения квестов по накоплению на складах леса
                         if (tile.id === 'wood' && warehouse.amount >= 5) checkTask('wood5');
                         if (tile.id === 'berries' && warehouse.amount >= 5) checkTask('berries5');
 
-                        // Истощение жилы (Секция 5.5)
                         if (tile.amount <= 0) {
                             tile.amount = 0;
                             tile.hasPeasant = false;
@@ -268,7 +260,6 @@ function forestExtractionTick() {
                             tile.icon = '⬜';
                         }
                     }
-                    // Если склад заполнен, крестьянин просто ждет (добыча на паузе)
                 }
             });
         }
@@ -279,7 +270,6 @@ function forestExtractionTick() {
         if (state.currentForestLoc) {
             renderForestScreen(state.currentForestLoc);
             if (state.selectedForestTile) {
-                // Обновляем открытую панель действий, чтобы видеть цифры в реалтайме
                 refreshForestActionPanel();
             }
         }
@@ -297,10 +287,12 @@ function renderResources() {
     document.getElementById('r-patriot').textContent = state.patriot;
     document.getElementById('patriot-fill').style.width = (state.patriot / CONFIG.patriot.max * 100) + '%';
 }
+
 function renderCurrentTask() {
     const current = CONFIG.tasks.find(t => !state.tasks[t.id]);
     document.getElementById('task-text').textContent = current ? '📜 ' + current.text : '✅ Все задачи выполнены';
 }
+
 function renderMap() {
     const grid = document.getElementById('map-grid');
     grid.innerHTML = '';
@@ -335,7 +327,7 @@ function isAdjacentToPlayer(loc) {
     return neighbors.some(nIdx => state.locations[nIdx].owner === 'player');
 }
 // ============================================================
-// ВЗАИМОДЕЙСТВИЕ: ГЛОБАЛЬНАЯ КАРТА & ТЗ ОКНО СКЛАДОВ
+// ВЗАИМОДЕЙСТВИЕ И КОНТЕКСТНОЕ МЕНЮ
 // ============================================================
 function onLocationClick(loc) {
     if (state.gameOver) return;
@@ -353,7 +345,6 @@ function onLocationClick(loc) {
         desc.textContent = 'Оснуйте город, чтобы получить первых подданных.';
         addBtn(btns, '🏕️ Построить город (3 🍞, 2 🪵)', () => buildBase(loc), state.resources.food >= 3 && state.resources.wood >= 2);
     } else if (loc.owner === 'player') {
-// ТЗ Секция 2.1 Контекстное меню со списком складов и кнопкой «Зайти»
         if (loc.id === 'forest') {
             let warehouseList = 'Построенные склады:\n';
             let builtAny = false;
@@ -391,7 +382,7 @@ function buildBase(loc) {
         state.resources.food -= 3;
         state.resources.wood -= 2;
         loc.baseBuilt = true;
-        state.peasants.total += 5; // ТЗ Секция 6: Город дает 5 крестьян
+        state.peasants.total += 5;
         checkTask('base');
         closeActionPanel();
         renderResources();
@@ -416,7 +407,6 @@ function backToGlobalMap() {
     renderMap();
 }
 function renderForestScreen(loc) {
-// Верхнее поле (Добыча 6х5)
     const upperGrid = document.getElementById('submap-grid-upper');
     upperGrid.innerHTML = '';
     loc.forestData.upperTiles.forEach(tile => {
@@ -425,7 +415,6 @@ function renderForestScreen(loc) {
         if (!tile.scouted) {
             div.classList.add('upper-fog');
             div.innerHTML = '❓';
-// Проверяем ТЗ: Открывать можно только соседние с уже открытыми
             if (isAdjacentInForest(tile, loc.forestData.upperTiles)) {
                 div.onclick = () => onForestUpperClick(tile);
             } else {
@@ -443,7 +432,6 @@ function renderForestScreen(loc) {
         }
         upperGrid.appendChild(div);
     });
-// Нижнее поле (Склады 1х7)
     const lowerGrid = document.getElementById('submap-grid-lower');
     lowerGrid.innerHTML = '';
     loc.forestData.lowerWarehouses.forEach(w => {
@@ -471,7 +459,7 @@ function isAdjacentInForest(tile, allTiles) {
     return neighbors.some(nIdx => allTiles[nIdx].scouted);
 }
 // ============================================================
-// КЛИКИ ПО ЛЕСНЫМ ТАЙЛАМ & ЛОГИКА ДЕЙСТВИЙ (ТЗ СЕКЦИИ 4 и 5)
+// КЛИКИ ПО ЛЕСНЫМ ТАЙЛАМ & ЛОГИКА ДЕЙСТВИЙ
 // ============================================================
 function onForestUpperClick(tile) {
     if (state.gameOver) return;
@@ -521,7 +509,6 @@ function refreshForestActionPanel() {
             title.textContent = 'Лесной Склад';
             const resDef = FOREST_RES_TYPES.find(r => r.id === item.storedType);
             desc.textContent = Тип хранения: ${resDef ? resDef.name : 'Пусто'}.\nЗаполнено: ${item.amount} / ${CONFIG.forest.warehouseCapacity} ед.;
-// Кнопки смены ресурса (Секция 4.1-4.2)
             FOREST_RES_TYPES.forEach(res => {
                 if (item.storedType !== res.id) {
                     addBtn(btns, 📦 Хранить ${res.icon} ${res.name}, () => changeWarehouseResource(item, res.id), true);
@@ -534,7 +521,6 @@ function refreshForestActionPanel() {
     }
     panel.classList.add('open');
 }
-// Пошаговое открытие сетки (Секция 3.2)
 function unlockForestSquare(tile) {
     if (state.resources.food >= CONFIG.forest.unlockCostProvision) {
         state.resources.food -= CONFIG.forest.unlockCostProvision;
@@ -544,7 +530,6 @@ function unlockForestSquare(tile) {
         onForestUpperClick(tile);
     }
 }
-// Назначение рабочих (Секция 5.1 / 6)
 function togglePeasantOnSquare(tile, activate) {
     if (activate) {
         if (getFreePeasantsCount() > 0) {
@@ -557,7 +542,6 @@ function togglePeasantOnSquare(tile, activate) {
     renderForestScreen(state.currentForestLoc);
     onForestUpperClick(tile);
 }
-// Постройка склада по прогрессивной шкале (Секция 4.1)
 function buildForestWarehouse(warehouse, cost) {
     if (state.resources.wood >= cost) {
         state.resources.wood -= cost;
@@ -569,7 +553,6 @@ function buildForestWarehouse(warehouse, cost) {
         onForestLowerClick(warehouse);
     }
 }
-// Смена ресурса со штрафом или бесплатно (Секция 4.2)
 function changeWarehouseResource(warehouse, newTypeId) {
     if (warehouse.amount > 0) {
         if (!confirm('Внимание! На складе есть запасы. При смене типа хранения они удалятся безвозвратно. Продолжить?')) {
@@ -577,7 +560,7 @@ function changeWarehouseResource(warehouse, newTypeId) {
         }
     }
     warehouse.storedType = newTypeId;
-    warehouse.amount = 0; // Полный сброс ресурсов
+    warehouse.amount = 0;
     renderForestScreen(state.currentForestLoc);
     onForestLowerClick(warehouse);
 }

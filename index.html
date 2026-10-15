@@ -2,87 +2,88 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Историческая игра — Миссия 1</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Историческая игра — Миссия 1: Земля предков</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <div id="app">
 
-    <div id="hud">
+    <!-- HUD -->
+    <header id="hud" aria-label="Панель ресурсов">
         <div class="hud-res">
-            <span>🍞 <b id="r-food">0</b></span>
-            <span>🪵 <b id="r-wood">0</b></span>
-            <span>🪙 <b id="r-gold">0</b></span>
-            <span>👨‍🌾 <b id="r-peasants">0 / 0</b></span>
+            <span title="Еда">🍞 <b id="r-food">0</b></span>
+            <span title="Древесина">🪵 <b id="r-wood">0</b></span>
+            <span title="Золото">🪙 <b id="r-gold">0</b></span>
+            <span title="Крестьяне (свободные / всего)">👨‍🌾 <b id="r-peasants">0 / 0</b></span>
         </div>
-        <div>❤️ <b id="r-patriot">100</b></div>
+        <div title="Патриотизм">❤️ <b id="r-patriot">100</b></div>
+    </header>
+    <div id="patriot-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+        <div id="patriot-fill"></div>
     </div>
-    <div id="patriot-bar"><div id="patriot-fill"></div></div>
 
     <!-- ЭКРАН 1: БРИФИНГ -->
-    <div class="screen active" id="briefing">
+    <section class="screen active" id="briefing" aria-label="Брифинг миссии">
         <h1>Миссия 1: Земля предков</h1>
         <p>Ты — воевода, которому поручено основать поселение на диких землях. Вокруг — лес, поле и село, но они под туманом войны.</p>
         <p>Начни с постройки базы (города), разведай окрестности и наладь сложную добычу в Дремучем Лесу.</p>
         <div class="tasks-preview">
             <b>Задачи:</b><br>
-            ☐ Построить базу (дает 5 крестьян)<br>
+            ☐ Построить базу (даёт 5 крестьян)<br>
             ☐ Провести разведку местности<br>
             ☐ Добыть древесину в лесу ×5<br>
             ☐ Собрать лесные ягоды ×5
         </div>
-        <button class="btn btn-primary" onclick="startMission()">Начать</button>
-    </div>
+        <button class="btn btn-primary" id="btn-start" type="button">Начать</button>
+    </section>
 
     <!-- ЭКРАН 2: ГЛОБАЛЬНАЯ КАРТА -->
-    <div class="screen" id="map-screen">
+    <section class="screen" id="map-screen" aria-label="Карта мира">
         <div id="map-scroll">
             <div id="map-grid"></div>
         </div>
         <div id="current-task">
             <span id="task-text">📜 Построить базу</span>
         </div>
-    </div>
+    </section>
 
     <!-- ЭКРАН 3: ВНУТРЕННЯЯ КАРТА ЛЕСА -->
-    <div class="screen" id="submap-screen">
+    <section class="screen" id="submap-screen" aria-label="Дремучий Лес">
         <div id="submap-header">
-            <button class="btn btn-close" id="btn-back-to-map" onclick="backToGlobalMap()">⬅ На карту мира</button>
+            <button class="btn btn-close" id="btn-back-to-map" type="button">⬅ На карту мира</button>
             <h2 id="submap-title">Дремучий Лес</h2>
         </div>
 
         <div id="forest-container">
-            <!-- Верхнее поле: Добыча (6х5) -->
             <div class="forest-section-title">Зона добычи (Верхнее поле)</div>
             <div id="submap-grid-upper"></div>
 
-            <!-- Нижнее поле: Склады (7 слотов) -->
             <div class="forest-section-title">Склады (Нижнее поле)</div>
             <div id="submap-grid-lower"></div>
         </div>
-    </div>
+    </section>
 
-    <!-- ПАНЕЛЬ ДЕЙСТВИЙ (ОБЩАЯ) -->
-    <div id="action-panel">
+    <!-- ПАНЕЛЬ ДЕЙСТВИЙ -->
+    <aside id="action-panel" aria-label="Панель действий">
         <div id="action-title"></div>
         <div id="action-desc"></div>
         <div id="action-buttons"></div>
-        <button class="btn btn-close" onclick="closeActionPanel()">Отмена</button>
-    </div>
+        <button class="btn btn-close" id="btn-cancel-action" type="button">Отмена</button>
+    </aside>
 
     <!-- МОДАЛЬНОЕ ОКНО -->
-    <div id="modal">
+    <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div id="modal-content">
             <h2 id="modal-title"></h2>
             <p id="modal-text"></p>
-            <button class="btn btn-primary" id="modal-btn"></button>
+            <button class="btn btn-primary" id="modal-btn" type="button"></button>
         </div>
     </div>
 
 </div>
 
-<script src="index.js"></script>
+<script src="index.js" defer></script>
 </body>
 </html>

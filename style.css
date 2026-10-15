@@ -1,14 +1,29 @@
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* ============================================================
+   RESET & БАЗА
+   ============================================================ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
 
 html, body {
     height: 100%;
     background: #1a1a1a;
     color: #e8e0c8;
-    font-family: Georgia, serif;
+    font-family: Georgia, 'Times New Roman', serif;
     overflow: hidden;
-    user-select: none;
 }
 
+button, .loc, .forest-tile {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* ============================================================
+   КОНТЕЙНЕР ПРИЛОЖЕНИЯ
+   ============================================================ */
 #app {
     position: relative;
     width: 100%;
@@ -18,44 +33,68 @@ html, body {
     background: #2a2418;
     display: flex;
     flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* ============================================================
+   HUD
+   ============================================================ */
 #hud {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 8px;
+    padding: 8px 10px;
     background: #1f1a10;
     border-bottom: 2px solid #6b5a2e;
     font-size: 12px;
     flex-shrink: 0;
+    gap: 6px;
+    flex-wrap: wrap;
 }
 
-.hud-res { display: flex; gap: 8px; }
-.hud-res span { white-space: nowrap; }
+.hud-res {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.hud-res span {
+    white-space: nowrap;
+}
 
 #patriot-bar {
     height: 6px;
     background: #3a2a1a;
     flex-shrink: 0;
+    overflow: hidden;
 }
 
 #patriot-fill {
     height: 100%;
     background: linear-gradient(90deg, #6b3a3a, #d0a040, #6ba040);
     width: 100%;
-    transition: width 0.3s;
+    transition: width 0.3s ease;
 }
 
+/* ============================================================
+   ЭКРАНЫ
+   ============================================================ */
 .screen {
     flex: 1;
     display: none;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;
 }
 
-.screen.active { display: flex; }
+.screen.active {
+    display: flex;
+}
 
+/* ============================================================
+   БРИФИНГ
+   ============================================================ */
 #briefing {
     padding: 24px 20px;
     overflow-y: auto;
@@ -68,6 +107,7 @@ html, body {
     font-size: 22px;
     color: #f0d060;
     margin-bottom: 16px;
+    line-height: 1.3;
 }
 
 #briefing p {
@@ -86,15 +126,24 @@ html, body {
     font-size: 13px;
     line-height: 1.8;
     width: 100%;
+    border-radius: 0 4px 4px 0;
 }
 
-#map-screen { padding: 8px; overflow: hidden; position: relative; }
+/* ============================================================
+   ГЛОБАЛЬНАЯ КАРТА
+   ============================================================ */
+#map-screen {
+    padding: 8px;
+    overflow: hidden;
+    position: relative;
+}
 
 #map-scroll {
     flex: 1;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
-    padding-top: 45px;
+    padding-top: 44px; /* место под #current-task */
+    min-height: 0;
 }
 
 #map-grid {
@@ -117,25 +166,70 @@ html, body {
     padding: 4px;
     position: relative;
     cursor: pointer;
-    transition: transform 0.1s;
+    transition: transform 0.1s ease, background-color 0.2s ease;
+    text-align: center;
 }
 
-.loc:active { transform: scale(0.95); }
-.loc.player { background: #3a5a3a; border-color: #6ba040; }
-.loc.fog { background: #2a2418; border-style: dashed; color: #6b5a2e; }
-.loc.fog .loc-name { color: #6b5a2e; }
+.loc:active {
+    transform: scale(0.95);
+}
 
-.loc .loc-icon { font-size: 24px; margin-bottom: 2px; }
-.loc .loc-name { font-size: 11px; font-weight: bold; text-align: center; }
-.loc .loc-status { font-size: 9px; opacity: 0.7; margin-top: 2px; text-align: center; }
+.loc.player {
+    background: #3a5a3a;
+    border-color: #6ba040;
+}
 
-.loc.locked { opacity: 0.4; cursor: not-allowed; }
-.loc.locked .loc-icon { filter: grayscale(1); }
-.loc.locked .loc-status { color: #6b3a3a; font-style: italic; }
+.loc.fog {
+    background: #2a2418;
+    border-style: dashed;
+    color: #8a7a4e;
+}
+
+.loc.fog .loc-name {
+    color: #8a7a4e;
+}
+
+.loc .loc-icon {
+    font-size: 24px;
+    margin-bottom: 2px;
+    line-height: 1;
+}
+
+.loc .loc-name {
+    font-size: 11px;
+    font-weight: bold;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.loc .loc-status {
+    font-size: 9px;
+    opacity: 0.75;
+    margin-top: 2px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.loc.locked {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.loc.locked .loc-icon {
+    filter: grayscale(1);
+}
+
+.loc.locked .loc-status {
+    color: #8a5a5a;
+    font-style: italic;
+}
 
 #current-task {
     position: absolute;
-    top: 8px; left: 8px; right: 8px;
+    top: 8px;
+    left: 8px;
+    right: 8px;
     background: rgba(31, 26, 16, 0.95);
     border: 1px solid #6b5a2e;
     border-radius: 4px;
@@ -144,11 +238,12 @@ html, body {
     color: #f0d060;
     z-index: 8;
     text-align: center;
+    pointer-events: none;
 }
 
 /* ============================================================
-/* ОБНОВЛЕННЫЕ СТИЛИ ЛОКАЦИИ ЛЕС (ВЕРХНЕЕ И НИЖНЕЕ ПОЛЕ)
-/* ============================================================ */
+   ЭКРАН ЛЕСА
+   ============================================================ */
 #submap-screen {
     padding: 8px;
     background: #1b2216;
@@ -158,6 +253,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     margin-bottom: 8px;
     flex-shrink: 0;
 }
@@ -167,20 +263,25 @@ html, body {
     padding: 6px 10px;
     font-size: 12px;
     width: auto;
+    flex-shrink: 0;
 }
 
 #submap-title {
     font-size: 16px;
     color: #f0d060;
+    text-align: right;
+    flex: 1;
 }
 
 #forest-container {
     flex: 1;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding-right: 2px;
+    min-height: 0;
 }
 
 .forest-section-title {
@@ -193,7 +294,7 @@ html, body {
     padding-left: 6px;
 }
 
-/* Сетка Добычи 6х5 */
+/* Сетка добычи 6x5 */
 #submap-grid-upper {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -204,7 +305,7 @@ html, body {
     border-radius: 6px;
 }
 
-/* Сетка Складов 1х7 */
+/* Сетка складов 1x7 */
 #submap-grid-lower {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -215,9 +316,8 @@ html, body {
     border-radius: 6px;
 }
 
-/* Универсальный квадрат для леса */
 .forest-tile {
-    aspect-ratio: 1;
+    aspect-ratio: 1 / 1;
     background: #2a3520;
     border: 1px solid #4a5a3a;
     border-radius: 4px;
@@ -227,53 +327,115 @@ html, body {
     align-items: center;
     cursor: pointer;
     position: relative;
-    transition: transform 0.1s, background-color 0.2s;
+    transition: transform 0.1s ease, background-color 0.2s ease;
+    min-width: 0;
+    overflow: hidden;
 }
 
-.forest-tile:active { transform: scale(0.95); }
+.forest-tile:active {
+    transform: scale(0.95);
+}
 
 /* Состояния верхней сетки */
-.forest-tile.upper-fog { background: #0c100a; border-style: dashed; color: #2a3520; }
-.forest-tile.upper-empty { background: #1a2216; opacity: 0.6; }
-.forest-tile.upper-resource { background: #353820; border-color: #d0a040; }
-.forest-tile.upper-working { background: #203a25; border-color: #6ba040; }
-.forest-tile.upper-depleted { background: #222; border-color: #444; opacity: 0.4; }
+.forest-tile.upper-fog {
+    background: #0c100a;
+    border-style: dashed;
+    color: #2a3520;
+    font-size: 14px;
+}
 
-/* Состояния нижней сетки складов */
-.forest-tile.lower-empty { background: #261f18; border: 1px dashed #6b5a2e; }
-.forest-tile.lower-warehouse { background: #423525; border: 1px solid #f0d060; }
+.forest-tile.upper-empty {
+    background: #1a2216;
+    opacity: 0.55;
+}
 
-.forest-tile .tile-icon { font-size: 16px; }
+.forest-tile.upper-resource {
+    background: #353820;
+    border-color: #d0a040;
+}
+
+.forest-tile.upper-working {
+    background: #203a25;
+    border-color: #6ba040;
+    box-shadow: inset 0 0 0 1px #6ba040;
+}
+
+.forest-tile.upper-depleted {
+    background: #222;
+    border-color: #444;
+    opacity: 0.4;
+}
+
+.forest-tile.locked {
+    cursor: not-allowed;
+    pointer-events: none;
+    opacity: 0.35;
+}
+
+/* Состояния складов */
+.forest-tile.lower-empty {
+    background: #261f18;
+    border: 1px dashed #6b5a2e;
+    color: #8a7a4e;
+    font-size: 16px;
+}
+
+.forest-tile.lower-warehouse {
+    background: #423525;
+    border: 1px solid #f0d060;
+}
+
+.forest-tile .tile-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
 .forest-tile .tile-badge {
     position: absolute;
     bottom: 1px;
+    left: 1px;
+    right: 1px;
     font-size: 8px;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0, 0, 0, 0.65);
     padding: 0 2px;
     border-radius: 2px;
     color: #fff;
-    max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: center;
 }
 
+/* ============================================================
+   ПАНЕЛЬ ДЕЙСТВИЙ
+   ============================================================ */
 #action-panel {
     position: absolute;
-    bottom: 0; left: 0; right: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
     background: #1f1a10;
     border-top: 2px solid #6b5a2e;
-    padding: 14px 16px;
-    transform: translateY(100%);
-    transition: transform 0.25s;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    transform: translateY(110%);
+    transition: transform 0.25s ease;
     z-index: 10;
+    max-height: 80vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
 }
 
-#action-panel.open { transform: translateY(0); }
+#action-panel.open {
+    transform: translateY(0);
+}
 
 #action-title {
     font-size: 16px;
     color: #f0d060;
     margin-bottom: 10px;
+    line-height: 1.3;
 }
 
 #action-desc {
@@ -281,8 +443,18 @@ html, body {
     color: #b0a890;
     margin-bottom: 12px;
     line-height: 1.5;
+    white-space: pre-line;
 }
 
+#action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* ============================================================
+   КНОПКИ
+   ============================================================ */
 .btn {
     display: block;
     width: 100%;
@@ -292,22 +464,47 @@ html, body {
     color: #e8e0c8;
     border: none;
     border-radius: 4px;
-    font-family: Georgia, serif;
+    font-family: Georgia, 'Times New Roman', serif;
     font-size: 15px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.15s ease, opacity 0.15s ease;
+    text-align: center;
 }
 
-.btn:active { background: #8a7040; }
-.btn:disabled { background: #3a3020; color: #6b5a2e; cursor: not-allowed; }
-.btn-primary { background: #6ba040; }
-.btn-primary:active { background: #8ac060; }
-.btn-close { background: #4a3a2a; }
+#action-buttons .btn {
+    margin-bottom: 0;
+}
 
+.btn:active:not(:disabled) {
+    background: #8a7040;
+}
+
+.btn:disabled {
+    background: #3a3020;
+    color: #6b5a2e;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.btn-primary {
+    background: #6ba040;
+}
+
+.btn-primary:active:not(:disabled) {
+    background: #8ac060;
+}
+
+.btn-close {
+    background: #4a3a2a;
+}
+
+/* ============================================================
+   МОДАЛЬНОЕ ОКНО
+   ============================================================ */
 #modal {
     position: absolute;
     inset: 0;
-    background: rgba(0,0,0,0.8);
+    background: rgba(0, 0, 0, 0.8);
     display: none;
     justify-content: center;
     align-items: center;
@@ -315,7 +512,9 @@ html, body {
     z-index: 20;
 }
 
-#modal.open { display: flex; }
+#modal.open {
+    display: flex;
+}
 
 #modal-content {
     background: #2a2418;
@@ -325,6 +524,8 @@ html, body {
     max-width: 360px;
     width: 100%;
     text-align: center;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 #modal-content h2 {
@@ -338,4 +539,60 @@ html, body {
     line-height: 1.6;
     margin-bottom: 16px;
     color: #d8d0b8;
+}
+
+/* ============================================================
+   СКРОЛЛБАР
+   ============================================================ */
+#map-scroll::-webkit-scrollbar,
+#forest-container::-webkit-scrollbar,
+#action-panel::-webkit-scrollbar,
+#briefing::-webkit-scrollbar,
+#modal-content::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+#map-scroll::-webkit-scrollbar-track,
+#forest-container::-webkit-scrollbar-track,
+#action-panel::-webkit-scrollbar-track,
+#briefing::-webkit-scrollbar-track,
+#modal-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#map-scroll::-webkit-scrollbar-thumb,
+#forest-container::-webkit-scrollbar-thumb,
+#action-panel::-webkit-scrollbar-thumb,
+#briefing::-webkit-scrollbar-thumb,
+#modal-content::-webkit-scrollbar-thumb {
+    background: #4a3a2a;
+    border-radius: 3px;
+}
+
+/* ============================================================
+   АДАПТИВ ПОД УЗКИЕ ЭКРАНЫ
+   ============================================================ */
+@media (max-width: 380px) {
+    #map-grid {
+        grid-template-columns: repeat(4, 82px);
+        grid-template-rows: repeat(5, 82px);
+    }
+
+    .loc .loc-icon { font-size: 20px; }
+    .loc .loc-name { font-size: 10px; }
+    .loc .loc-status { font-size: 8px; }
+
+    #hud { font-size: 11px; padding: 6px 8px; }
+    .hud-res { gap: 6px; }
+}
+
+/* ============================================================
+   ДОСТУПНОСТЬ
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+    }
 }

@@ -94,6 +94,7 @@ html, body {
     flex: 1;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
+    padding-top: 45px;
 }
 
 #map-grid {
@@ -102,6 +103,7 @@ html, body {
     grid-template-rows: repeat(5, 100px);
     gap: 6px;
     padding: 4px;
+    justify-content: center;
 }
 
 .loc {
@@ -123,9 +125,9 @@ html, body {
 .loc.fog { background: #2a2418; border-style: dashed; color: #6b5a2e; }
 .loc.fog .loc-name { color: #6b5a2e; }
 
-.loc .loc-icon { font-size: 26px; margin-bottom: 2px; }
-.loc .loc-name { font-size: 12px; font-weight: bold; text-align: center; }
-.loc .loc-status { font-size: 9px; opacity: 0.7; margin-top: 2px; }
+.loc .loc-icon { font-size: 24px; margin-bottom: 2px; }
+.loc .loc-name { font-size: 11px; font-weight: bold; text-align: center; }
+.loc .loc-status { font-size: 9px; opacity: 0.7; margin-top: 2px; text-align: center; }
 
 .loc.locked { opacity: 0.4; cursor: not-allowed; }
 .loc.locked .loc-icon { filter: grayscale(1); }
@@ -145,96 +147,115 @@ html, body {
 }
 
 /* ============================================================
-/* СТИЛИ ДЛЯ ВНУТРЕННЕЙ КАРТЫ ЛЕСА (НОВЫЕ)
+/* ОБНОВЛЕННЫЕ СТИЛИ ЛОКАЦИИ ЛЕС (ВЕРХНЕЕ И НИЖНЕЕ ПОЛЕ)
 /* ============================================================ */
 #submap-screen {
-    padding: 12px;
-    background: #1b2216; /* Более темный, лесной оттенок */
+    padding: 8px;
+    background: #1b2216;
 }
 
 #submap-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
-    gap: 12px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
 }
 
 #btn-back-to-map {
     margin-bottom: 0;
-    padding: 8px 12px;
-    font-size: 13px;
+    padding: 6px 10px;
+    font-size: 12px;
     width: auto;
 }
 
 #submap-title {
-    font-size: 18px;
+    font-size: 16px;
     color: #f0d060;
-    text-align: right;
 }
 
-#submap-scroll {
+#forest-container {
     flex: 1;
-    overflow: auto;
+    overflow-y: auto;
     display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-#submap-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 100px); /* Сетка леса 3х3 */
-    grid-template-rows: repeat(3, 100px);
+    flex-direction: column;
     gap: 8px;
-    padding: 8px;
-    background: #12180e;
-    border: 2px solid #3a4a2a;
-    border-radius: 8px;
+    padding-right: 2px;
 }
 
-.sub-loc {
-    background: #2a3520;
-    border: 2px solid #4a5a3a;
+.forest-section-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #a0b090;
+    letter-spacing: 1px;
+    margin-top: 4px;
+    border-left: 2px solid #4a5a3a;
+    padding-left: 6px;
+}
+
+/* Сетка Добычи 6х5 */
+#submap-grid-upper {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: #12180e;
+    border: 1px solid #3a4a2a;
     border-radius: 6px;
+}
+
+/* Сетка Складов 1х7 */
+#submap-grid-lower {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: #19140f;
+    border: 1px solid #5a4a2e;
+    border-radius: 6px;
+}
+
+/* Универсальный квадрат для леса */
+.forest-tile {
+    aspect-ratio: 1;
+    background: #2a3520;
+    border: 1px solid #4a5a3a;
+    border-radius: 4px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 4px;
     cursor: pointer;
-    transition: transform 0.1s;
+    position: relative;
+    transition: transform 0.1s, background-color 0.2s;
 }
 
-.sub-loc:active { transform: scale(0.95); }
-.sub-loc.fog { background: #0f140b; border-style: dotted; color: #3a4a2a; }
-.sub-loc.has-resource { border-color: #d0a040; background: #353020; }
-.sub-loc.has-warehouse { border-color: #6ba040; position: relative; }
+.forest-tile:active { transform: scale(0.95); }
 
-/* Маленький значок склада поверх квадрата */
-.sub-loc.has-warehouse::after {
-    content: '🏠';
+/* Состояния верхней сетки */
+.forest-tile.upper-fog { background: #0c100a; border-style: dashed; color: #2a3520; }
+.forest-tile.upper-empty { background: #1a2216; opacity: 0.6; }
+.forest-tile.upper-resource { background: #353820; border-color: #d0a040; }
+.forest-tile.upper-working { background: #203a25; border-color: #6ba040; }
+.forest-tile.upper-depleted { background: #222; border-color: #444; opacity: 0.4; }
+
+/* Состояния нижней сетки складов */
+.forest-tile.lower-empty { background: #261f18; border: 1px dashed #6b5a2e; }
+.forest-tile.lower-warehouse { background: #423525; border: 1px solid #f0d060; }
+
+.forest-tile .tile-icon { font-size: 16px; }
+.forest-tile .tile-badge {
     position: absolute;
-    top: 2px;
-    right: 2px;
-    font-size: 10px;
+    bottom: 1px;
+    font-size: 8px;
+    background: rgba(0,0,0,0.6);
+    padding: 0 2px;
+    border-radius: 2px;
+    color: #fff;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
 }
-
-.sub-loc .sub-icon { font-size: 24px; }
-.sub-loc .sub-name { font-size: 11px; font-weight: bold; text-align: center; margin-top: 2px; }
-.sub-loc .sub-workers { font-size: 10px; color: #f0d060; margin-top: 1px; }
-
-#submap-info {
-    margin-top: 12px;
-    background: #12180e;
-    padding: 8px;
-    border-radius: 4px;
-    border: 1px solid #3a4a2a;
-    font-size: 13px;
-    text-align: center;
-    color: #d8d0b8;
-}
-
-/* ============================================================ */
 
 #action-panel {
     position: absolute;

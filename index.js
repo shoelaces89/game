@@ -1,18 +1,15 @@
 // ============================================================
-// КОНФИГ
+// КОНФИГ И БАЗОВЫЕ КОНСТАНТЫ ИЗ ТЗ
 // ============================================================
 const CONFIG = {
     resources: {
-        food: { name: 'Еда', icon: '🍞', start: 100 },
-        wood: { name: 'Древесина', icon: '🪵', start: 100 },
-        gold: { name: 'Золото', icon: '🪙', start: 0 },
-        peasants: { name: 'Крестьяне', icon: '👨‍🌾', start: 100 }
+        food: { name: 'Еда', icon: '🍞', start: 10 },
+        wood: { name: 'Древесина', icon: '🪵', start: 15 },
+        gold: { name: 'Золото', icon: '🪙', start: 0 }
     },
     costs: {
         buildBase: { food: 3, wood: 2 },
-        scout: { food: 1 },
-        subScout: { food: 1 },         // Стоимость разведки квадрата в лесу
-        buildWarehouse: { gold: 10 }   // Стоимость постройки склада в лесу
+        scout: { food: 1 }
     },
     patriot: {
         start: 100,
@@ -22,34 +19,38 @@ const CONFIG = {
         revoltThreshold: 0
     },
     map: { cols: 4, rows: 5 },
-    subMap: { cols: 3, rows: 3 }, // Размерность внутренней сетки леса
+
+    // ТЗ Константы по Лесу
+    forest: {
+        upperWidth: 6,
+        upperHeight: 5,
+        totalSquares: 30,
+        resourceSquaresCount: 21,
+        amountPerSquare: 75,
+        warehouseCapacity: 100,
+        unlockCostProvision: 1,
+        extractionTimeMs: 5000, // 5 секунд из ТЗ
+        warehouseCosts: [10, 12, 14, 16, 18, 20, 22] // Стоимость прогрессии
+    },
+
     tasks: [
         { id: 'base', text: 'Построить базу' },
         { id: 'scout', text: 'Провести разведку местности' },
-        { id: 'food5', text: 'Произвести еду ×5' },
-        { id: 'wood5', text: 'Добыть древесину ×5' }
+        { id: 'wood5', text: 'Добыть древесину в лесу ×5' },
+        { id: 'berries5', text: 'Собрать лесные ягоды ×5' }
     ]
 };
 
-// ============================================================
-// СОСТОЯНИЕ
-// ============================================================
-const state = {
-    resources: {
-        food: CONFIG.resources.food.start,
-        wood: CONFIG.resources.wood.start,
-        gold: CONFIG.resources.gold.start,
-        peasants: CONFIG.resources.peasants.start
-    },
-    patriot: CONFIG.patriot.start,
-    tasks: {},
-    locations: [],
-    selectedLoc: null,     // Текущая глобальная локация
-    selectedSubLoc: null,  // Текущий квадрат внутри подлокации
-    currentSubMapLoc: null,// Ссылка на глобальный Лес, в котором сейчас находится игрок
-    gameOver: false,
-    patriotTimer: null
-};
+// Типы ресурсов лесного массива для распределения
+const FOREST_RES_TYPES = [
+    { id: 'wood', name: 'Древесина', icon: '🪵' },
+    { id: 'hive', name: 'Улей пчелиный', icon: '🐝' },
+    { id: 'animals', name: 'Звери', icon: '🦊' },
+    { id: 'resin', name: 'Смола', icon: '💧' },
+    { id: 'bark', name: 'Кора', icon: '🪵' },
+    { id: 'mushrooms', name: 'Грибы', icon: '🍄' },
+    { id: 'berries', name: 'Ягоды', icon: '🍒' }
+];
 
 const LOCATION_TYPES = [
     { id: 'field', name: 'Поле', icon: '🌾' },
@@ -59,36 +60,76 @@ const LOCATION_TYPES = [
 ];
 
 // ============================================================
-// ГЕНЕРАЦИЯ КАРТЫ И ПОДЛОКАЦИЙ
+// ИГРОВОЕ СОСТОЯНИЕ
 // ============================================================
-function generateSubMap() {
-    const total = CONFIG.subMap.cols * CONFIG.subMap.rows;
-    const subLocs = [];
+const state = {
+    resources: { food: 0, wood: 0, gold: 0 },
+    peasants: { total: 0 }, // При старте 0, база даст +5
+    patriot: CONFIG.patriot.start,
+    tasks: {},
+    locations: [],
+    selectedLoc: null,       // Глобальная выбранная локация
+    selectedForestTile: null,// Выбранный лесной тайл (верхний или нижний)
+    currentForestLoc: null,  // Ссылка на активный глобальный Лес
+    gameOver: false,
+    patriotTimer: null,
+    extractionTimer: null    // Таймер добычи 5 сек
+};
 
-    // Генерируем 9 квадратов для леса. Гарантируем хотя бы 3 квадрата с богатым ресурсом
-    const types = ['resource', 'resource', 'resource'];
-    while (types.length < total) {
-        types.push(Math.random() > 0.4 ? 'empty' : 'resource');
+// ============================================================
+// ГЕНЕРАЦИЯ ДАННЫХ ЛОКАЦИИ ЛЕСА (ТЗ СЕКЦИИ 3 и 7)
+// ============================================================
+function generateForestData() {
+    const upperTiles = [];
+    const lowerWarehouses = [];
+
+    // Создаем пул ресурсов (21 ресурсный квадрат: 7 типов х 3 шт)
+    const pool = [];
+    FOREST_RES_TYPES.forEach(type => {
+        for (let i = 0; i < 3; i++) {
+            pool.push({ id: type.id, name: type.name, icon: type.icon });
+        }
+    });
+    // Добиваем пустыми до 30
+    while (pool.length < CONFIG.forest.totalSquares) {
+        pool.push({ id: 'empty', name: 'Пустой квадрат леса', icon: '🌿' });
     }
-    // Перемешиваем
-    for (let i = types.length - 1; i > 0; i--) {
+    // Шаффл
+    for (let i = pool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        const tmp = types[i]; types[i] = types[j]; types[j] = tmp;
+        [pool[i], pool[j]] = [pool[j], pool[i]];
     }
 
-    for (let i = 0; i < total; i++) {
-        const isResource = types[i] === 'resource';
-        subLocs.push({
-            index: i,
-            id: isResource ? 'wood_vein' : 'thicket',
-            name: isResource ? 'Золотая жила леса' : 'Густая чаща',
-            icon: isResource ? '🪵' : '🌿',
+    // Собираем верхнее поле 6х5
+    for (let i = 0; i < CONFIG.forest.totalSquares; i++) {
+        const col = i % CONFIG.forest.upperWidth;
+        const row = Math.floor(i / CONFIG.forest.upperWidth);
+        const resData = pool[i];
+
+        upperTiles.push({
+            index: i, col: col, row: row,
+            id: resData.id, name: resData.name, icon: resData.icon,
             scouted: false,
-            hasWarehouse: false,
-            workers: 0
+            amount: resData.id !== 'empty' ? CONFIG.forest.amountPerSquare : 0,
+            hasPeasant: false,
+            depleted: false
         });
     }
-    return subLocs;
+
+    // Нижнее поле: 7 пустых слотов под склады
+    for (let i = 0; i < 7; i++) {
+        lowerWarehouses.push({
+            index: i,
+            built: false,
+            storedType: 'none', // 'none' или id ресурса
+            amount: 0
+        });
+    }
+
+    // Открываем самый первый ряд/левый угол как стартовую точку для снятия тумана войны
+    upperTiles[0].scouted = true;
+
+    return { upperTiles, lowerWarehouses };
 }
 
 function generateMap() {
@@ -96,17 +137,16 @@ function generateMap() {
     const rows = CONFIG.map.rows;
     const total = cols * rows;
     const locs = [];
-    const baseIndex = (rows - 1) * cols + 0;
+    const baseIndex = (rows - 1) * cols + 0; // Левый нижний угол карты
 
     const guaranteed = ['field', 'forest', 'village'];
     const types = guaranteed.slice();
     while (types.length < total - 1) {
-        const t = LOCATION_TYPES[Math.floor(Math.random() * LOCATION_TYPES.length)].id;
-        types.push(t);
+        types.push(LOCATION_TYPES[Math.floor(Math.random() * LOCATION_TYPES.length)].id);
     }
     for (let i = types.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        const tmp = types[i]; types[i] = types[j]; types[j] = tmp;
+        [types[i], types[j]] = [types[j], types[i]];
     }
 
     let typeIndex = 0;
@@ -114,11 +154,12 @@ function generateMap() {
         const col = i % cols;
         const row = Math.floor(i / cols);
         let id, name, icon;
+
         if (i === baseIndex) {
             id = 'base'; name = 'База'; icon = '🏕️';
         } else {
             const typeId = types[typeIndex++];
-            const def = LOCATION_TYPES.find(function(t) { return t.id === typeId; });
+            const def = LOCATION_TYPES.find(t => t.id === typeId);
             id = typeId; name = def.name; icon = def.icon;
         }
 
@@ -127,388 +168,420 @@ function generateMap() {
             owner: i === baseIndex ? 'player' : 'none',
             scouted: i === baseIndex,
             baseBuilt: false,
-            workers: 0, // Для Полей и Сел оставляем прямую добычу
-            subLocs: id === 'forest' ? generateSubMap() : null, // Подсетка только для Леса
-            warehouses: 0
+            forestData: id === 'forest' ? generateForestData() : null
         });
     }
     return locs;
 }
 
 // ============================================================
-// ИНИЦИАЛИЗАЦИЯ
+// ИНИЦИАЛИЗАЦИЯ И СЧЕТ КРЕСТЬЯН (ТЗ СЕКЦИЯ 6)
 // ============================================================
 function initState() {
     state.resources = {
         food: CONFIG.resources.food.start,
         wood: CONFIG.resources.wood.start,
-        gold: CONFIG.resources.gold.start,
-        peasants: CONFIG.resources.peasants.start
+        gold: CONFIG.resources.gold.start
     };
+    state.peasants.total = 0;
     state.patriot = CONFIG.patriot.start;
-    state.tasks = {};
-    CONFIG.tasks.forEach(function(t) { state.tasks[t.id] = false; });
-    state.locations = generateMap();
-    state.selectedLoc = null;
-    state.selectedSubLoc = null;
-    state.currentSubMapLoc = null;
     state.gameOver = false;
+    state.currentForestLoc = null;
+    state.selectedLoc = null;
+    state.selectedForestTile = null;
+
+    CONFIG.tasks.forEach(t => state.tasks[t.id] = false);
+
+    state.locations = generateMap();
 
     if (state.patriotTimer) clearInterval(state.patriotTimer);
     state.patriotTimer = setInterval(gameTick, CONFIG.patriot.tickMs);
+
+    if (state.extractionTimer) clearInterval(state.extractionTimer);
+    state.extractionTimer = setInterval(forestExtractionTick, CONFIG.forest.extractionTimeMs);
 
     renderResources();
     renderMap();
     renderCurrentTask();
 }
 
-// ============================================================
-// ИГРОВОЙ ТАКТ
-// ============================================================
-function gameTick() {
-    if (state.gameOver) return;
-
-    state.patriot -= CONFIG.patriot.decayPerTick;
-    if (state.patriot <= CONFIG.patriot.revoltThreshold) {
-        state.patriot = 0;
-        endGame(false, 'Бунт! Уровень патриотизма упал до нуля. Народ сверг воеводу.');
-        return;
-    }
-
-    let totalFoodGathered = 0;
-    let totalWoodGathered = 0;
-    let totalGoldGathered = 0;
-
-    state.locations.forEach(function(loc) {
-        if (loc.owner === 'player') {
-            if (loc.id === 'field') {
-                totalFoodGathered += loc.workers;
-            } else if (loc.id === 'village') {
-                totalGoldGathered += loc.workers;
-            } else if (loc.id === 'forest' && loc.subLocs) {
-                // Сбор дерева идет с каждого конкретного квадрата внутри подлокации леса
-                loc.subLocs.forEach(function(sub) {
-                    if (sub.id === 'wood_vein' && sub.workers > 0) {
-                        // Базовая добыча 1 + бонус 1, если на этом квадрате построен склад
-                        let bonus = sub.hasWarehouse ? 1 : 0;
-                        totalWoodGathered += sub.workers * (1 + bonus);
-                    }
-                });
-            }
-        }
-    });
-
-    state.resources.food += totalFoodGathered;
-    state.resources.wood += totalWoodGathered;
-    state.resources.gold += totalGoldGathered;
-
-    if (totalFoodGathered >= 5) checkTask('food5');
-    if (totalWoodGathered >= 5) checkTask('wood5');
-
-    renderResources();
-
-    // Динамически обновляем интерфейсы, если игрок находится в меню
-    if (state.currentSubMapLoc) {
-        renderSubMap(state.currentSubMapLoc);
-        if (state.selectedSubLoc) onSubLocationClick(state.selectedSubLoc);
-    } else if (state.selectedLoc) {
-        onLocationClick(state.selectedLoc);
-    }
-}
-
-// ============================================================
-// УПРАВЛЕНИЕ КРЕСТЬЯНАМИ
-// ============================================================
 function getAssignedPeasantsCount() {
-    let count = 0;
-    state.locations.forEach(function(loc) {
-        count += (loc.workers || 0);
-        if (loc.subLocs) {
-            loc.subLocs.forEach(function(sub) {
-                count += (sub.workers || 0);
+    let assigned = 0;
+    state.locations.forEach(loc => {
+        if (loc.forestData) {
+            loc.forestData.upperTiles.forEach(tile => {
+                if (tile.hasPeasant) assigned++;
             });
         }
     });
-    return count;
+    return assigned;
 }
 
 function getFreePeasantsCount() {
-    return state.resources.peasants - getAssignedPeasantsCount();
+    return state.peasants.total - getAssignedPeasantsCount();
 }
 
-function assignPeasant(loc) {
-    if (getFreePeasantsCount() > 0) {
-        loc.workers++;
-        onLocationClick(loc);
-        renderMap();
+// ============================================================
+// ИГРОВЫЕ ТИКИ
+// ============================================================
+function gameTick() {
+    if (state.gameOver) return;
+    state.patriot -= CONFIG.patriot.decayPerTick;
+    if (state.patriot <= CONFIG.patriot.revoltThreshold) {
+        state.patriot = 0;
+        endGame(false, 'Бунт! Патриотизм на нуле. Народ сверг воеводу.');
+        return;
     }
+    renderResources();
 }
 
-function removePeasant(loc) {
-    if (loc.workers > 0) {
-        loc.workers--;
-        onLocationClick(loc);
-        renderMap();
-    }
-}
+// ТЗ Секция 5.2 - 5.5 Автоматическая добыча раз в 5 сек
+function forestExtractionTick() {
+    if (state.gameOver) return;
 
-// Назначение крестьян внутри леса на конкретный квадрат
-function assignSubPeasant(subLoc) {
-    if (getFreePeasantsCount() > 0) {
-        subLoc.workers++;
-        onSubLocationClick(subLoc);
-        renderSubMap(state.currentSubMapLoc);
-    }
-}
+    let updateRequired = false;
 
-function removeSubPeasant(subLoc) {
-    if (subLoc.workers > 0) {
-        subLoc.workers--;
-        onSubLocationClick(subLoc);
-        renderSubMap(state.currentSubMapLoc);
+    state.locations.forEach(loc => {
+        if (loc.id === 'forest' && loc.owner === 'player' && loc.forestData) {
+            loc.forestData.upperTiles.forEach(tile => {
+                if (tile.hasPeasant && tile.amount > 0 && !tile.depleted) {
+                    // Ищем склад, принимающий данный ресурс
+                    const warehouse = loc.forestData.lowerWarehouses.find(w => w.built && w.storedType === tile.id && w.amount < CONFIG.forest.warehouseCapacity);
+
+                    if (warehouse) {
+                        tile.amount--;
+                        warehouse.amount++;
+                        updateRequired = true;
+
+                        // Проверка выполнения квестов по накоплению на складах леса
+                        if (tile.id === 'wood' && warehouse.amount >= 5) checkTask('wood5');
+                        if (tile.id === 'berries' && warehouse.amount >= 5) checkTask('berries5');
+
+                        // Истощение жилы (Секция 5.5)
+                        if (tile.amount <= 0) {
+                            tile.amount = 0;
+                            tile.hasPeasant = false;
+                            tile.depleted = true;
+                            tile.id = 'empty';
+                            tile.name = 'Отработанный пустой квадрат';
+                            tile.icon = '⬜';
+                        }
+                    }
+                    // Если склад заполнен, крестьянин просто ждет (добыча на паузе)
+                }
+            });
+        }
+    });
+
+    if (updateRequired) {
+        renderResources();
+        if (state.currentForestLoc) {
+            renderForestScreen(state.currentForestLoc);
+            if (state.selectedForestTile) {
+                // Обновляем открытую панель действий, чтобы видеть цифры в реалтайме
+                refreshForestActionPanel();
+            }
+        }
     }
 }
 
 // ============================================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-// ============================================================
-function canAfford(cost) {
-    for (let res in cost) {
-        if (state.resources[res] < cost[res]) return false;
-    }
-    return true;
-}
-
-function payCost(cost) {
-    for (let res in cost) {
-        state.resources[res] -= cost[res];
-    }
-}
-
-function checkTask(id) {
-    if (state.tasks[id] === false) {
-        state.tasks[id] = true;
-        renderCurrentTask();
-        checkVictory();
-    }
-}
-
-function checkVictory() {
-    const allDone = CONFIG.tasks.every(function(t) { return state.tasks[t.id]; });
-    if (allDone) {
-        endGame(true, 'Победа! Все задачи миссии выполнены. Земля предков освоена!');
-    }
-}
-
-// ============================================================
-// РЕНДЕР ИНТЕРФЕЙСА
+// РЕНДЕР ХУДА И КАРТЫ
 // ============================================================
 function renderResources() {
     document.getElementById('r-food').textContent = state.resources.food;
     document.getElementById('r-wood').textContent = state.resources.wood;
     document.getElementById('r-gold').textContent = state.resources.gold;
-    document.getElementById('r-peasants').textContent = getFreePeasantsCount() + ' / ' + state.resources.peasants;
+    document.getElementById('r-peasants').textContent = getFreePeasantsCount() + ' / ' + state.peasants.total;
     document.getElementById('r-patriot').textContent = state.patriot;
-    const pct = (state.patriot / CONFIG.patriot.max) * 100;
-    document.getElementById('patriot-fill').style.width = pct + '%';
+    document.getElementById('patriot-fill').style.width = (state.patriot / CONFIG.patriot.max * 100) + '%';
 }
-
 function renderCurrentTask() {
-    const current = CONFIG.tasks.find(function(t) { return !state.tasks[t.id]; });
-    const el = document.getElementById('task-text');
-    if (current) {
-        el.textContent = '📜 ' + current.text;
-    } else {
-        el.textContent = '✅ Все задачи выполнены';
-    }
+    const current = CONFIG.tasks.find(t => !state.tasks[t.id]);
+    document.getElementById('task-text').textContent = current ? '📜 ' + current.text : '✅ Все задачи выполнены';
 }
-
 function renderMap() {
     const grid = document.getElementById('map-grid');
     grid.innerHTML = '';
-    const sorted = state.locations.slice().sort(function(a, b) {
-        if (a.row !== b.row) return a.row - b.row;
-        return a.col - b.col;
-    });
-    for (let i = 0; i < sorted.length; i++) {
-        const loc = sorted[i];
+    const sorted = state.locations.slice().sort((a, b) => a.row !== b.row ? a.row - b.row : a.col - b.col);
+    sorted.forEach(loc => {
         const div = document.createElement('div');
         div.className = 'loc';
         if (!loc.scouted && loc.owner !== 'player') div.classList.add('fog');
         if (loc.owner === 'player') div.classList.add('player');
-        if (loc.owner !== 'player' && !loc.scouted && !isAdjacentToPlayer(loc)) {
-            div.classList.add('locked');
-        }
+        if (loc.owner !== 'player' && !loc.scouted && !isAdjacentToPlayer(loc)) div.classList.add('locked');
         const showInfo = loc.scouted || loc.owner === 'player';
-        let totalWorkers = loc.workers || 0;
-        if (loc.subLocs) {
-            loc.subLocs.forEach(function(s) { totalWorkers += (s.workers || 0); });
+        let statusText = 'туман войны';
+        if (loc.owner === 'player') {
+            statusText = (loc.id === 'base' && !loc.baseBuilt) ? 'требует постройки' : 'под контролем';
+        } else if (loc.scouted) {
+            statusText = 'разведано';
+        } else if (!isAdjacentToPlayer(loc)) {
+            statusText = 'далеко';
         }
-        let workerBadge = totalWorkers > 0 ? ' (' + totalWorkers + '👨‍🌾)' : '';
-        div.innerHTML =
-            '' + (showInfo ? loc.icon : '❓') + '' +
-            '' + (showInfo ? loc.name : '???') + workerBadge + '' +
-            '' + getLocStatus(loc, totalWorkers) + '';
-        div.onclick = createLocHandler(loc);
+        div.innerHTML = <div class="loc-icon">${showInfo ? loc.icon : '❓'}</div> <div class="loc-name">${showInfo ? loc.name : '???'}</div> <div class="loc-status">${statusText}</div>;
+        div.onclick = () => onLocationClick(loc);
         grid.appendChild(div);
-    }
-}
-function createLocHandler(loc) {
-    return function() { onLocationClick(loc); };
-}
-function getLocStatus(loc, totalWorkers) {
-    if (loc.owner === 'player') {
-        if (loc.id === 'base' && !loc.baseBuilt) return 'нужно построить базу';
-        if (totalWorkers > 0) return 'идет добыча...';
-        return 'под контролем';
-    }
-    if (loc.scouted) return 'разведано';
-    if (!isAdjacentToPlayer(loc)) return 'далеко';
-    return 'туман войны';
+    });
 }
 function isAdjacentToPlayer(loc) {
     const cols = CONFIG.map.cols;
-    const rows = CONFIG.map.rows;
     const neighbors = [];
-    if (loc.col > 0)        neighbors.push(loc.index - 1);
+    if (loc.col > 0) neighbors.push(loc.index - 1);
     if (loc.col < cols - 1) neighbors.push(loc.index + 1);
-    if (loc.row > 0)        neighbors.push(loc.index - cols);
-    if (loc.row < rows - 1) neighbors.push(loc.index + cols);
-    for (let i = 0; i < neighbors.length; i++) {
-        if (state.locations[neighbors[i]].owner === 'player') return true;
-    }
-    return false;
+    if (loc.row > 0) neighbors.push(loc.index - cols);
+    if (loc.row < CONFIG.map.rows - 1) neighbors.push(loc.index + cols);
+    return neighbors.some(nIdx => state.locations[nIdx].owner === 'player');
 }
 // ============================================================
-// ВЗАИМОДЕЙСТВИЕ С ГЛОБАЛЬНОЙ КАРТОЙ
+// ВЗАИМОДЕЙСТВИЕ: ГЛОБАЛЬНАЯ КАРТА & ТЗ ОКНО СКЛАДОВ
 // ============================================================
 function onLocationClick(loc) {
     if (state.gameOver) return;
     if (loc.owner !== 'player' && !loc.scouted && !isAdjacentToPlayer(loc)) return;
-// ЕСЛИ КЛИКНУЛИ НА КУПЛЕННЫЙ ЛЕС -> ЗАХОДИМ ВНУТРЬ ЛОКАЦИИ ЛЕСА
-    if (loc.id === 'forest' && loc.owner === 'player') {
-        closeActionPanel();
-        openSubMap(loc);
-        return;
-    }
     state.selectedLoc = loc;
-    const panel = document.getElementById('action-panel');
+    const btns = document.getElementById('action-buttons');
     const title = document.getElementById('action-title');
     const desc = document.getElementById('action-desc');
-    const btns = document.getElementById('action-buttons');
     btns.innerHTML = '';
-    title.textContent = (loc.scouted || loc.owner === 'player') ? loc.name : 'Неизвестная локация';
+    title.textContent = (loc.scouted || loc.owner === 'player') ? loc.name : 'Неизвестная территория';
     if (!loc.scouted && loc.owner !== 'player') {
-        desc.textContent = 'Эта локация скрыта туманом войны. Проведите разведку, чтобы узнать, что здесь.';
-        addBtn(btns, '🔍 Разведка (1 🍞)', function() { scoutLocation(loc); }, state.resources.food >= CONFIG.costs.scout.food);
+        desc.textContent = 'Локация скрыта туманом. Отправьте разведчиков.';
+        addBtn(btns, '🔍 Разведка (1 🍞)', () => scoutLocation(loc), state.resources.food >= CONFIG.costs.scout.food);
     } else if (loc.id === 'base' && loc.owner === 'player' && !loc.baseBuilt) {
-        desc.textContent = 'Здесь будет ваша главная база. Постройте её, чтобы начать.';
-        addBtn(btns, '🏕️ Построить базу (3 🍞, 2 🪵)', function() { buildBase(loc); }, canAfford(CONFIG.costs.buildBase));
+        desc.textContent = 'Оснуйте город, чтобы получить первых подданных.';
+        addBtn(btns, '🏕️ Построить город (3 🍞, 2 🪵)', () => buildBase(loc), state.resources.food >= 3 && state.resources.wood >= 2);
     } else if (loc.owner === 'player') {
-        let resourceInfo = loc.id === 'field' ? 'производят Еду (🍞)' : 'приносят Золото (🪙)';
-        desc.textContent = 'Земля под вашим контролем. Назначено крестьян: ' + loc.workers + '. Они ' + resourceInfo + ' каждый такт.';
-        addBtn(btns, '➕ Назначить крестьянина (Свободно: ' + getFreePeasantsCount() + ')', function() { assignPeasant(loc); }, getFreePeasantsCount() > 0);
-        addBtn(btns, '➖ Убрать крестьянина', function() { removePeasant(loc); }, loc.workers > 0);
+// ТЗ Секция 2.1 Контекстное меню со списком складов и кнопкой «Зайти»
+        if (loc.id === 'forest') {
+            let warehouseList = 'Построенные склады:\n';
+            let builtAny = false;
+            loc.forestData.lowerWarehouses.forEach((w, i) => {
+                if (w.built) {
+                    builtAny = true;
+                    const resName = FOREST_RES_TYPES.find(r => r.id === w.storedType)?.name || 'Пусто';
+                    warehouseList += • Слот ${i+1}: ${resName} (${w.amount} / ${CONFIG.forest.warehouseCapacity} ед.)\n;
+                }
+            });
+            if (!builtAny) warehouseList += 'Склады отсутствуют.';
+            desc.textContent = warehouseList;
+            addBtn(btns, '🚪 Зайти в Лес', () => { closeActionPanel(); openForestScreen(loc); }, true);
+        } else {
+            desc.textContent = loc.id === 'field' ? 'Регион поставляет ресурсы на внешние рынки.' : 'Селение выплачивает регулярные подати.';
+        }
     } else {
-        desc.textContent = 'Разведано. Вы можете присоединить эту землю к своим владениям.';
-        addBtn(btns, '🚩 Присоединить земли', function() {
-            loc.owner = 'player';
-            closeActionPanel();
-            renderMap();
-            checkVictory();
-        }, true);
+        desc.textContent = 'Земля разведана. Присоедините её к своим владениям.';
+        addBtn(btns, '🚩 Присоединить мирно', () => { loc.owner = 'player'; closeActionPanel(); renderMap(); }, true);
     }
-    panel.classList.add('open');
+    document.getElementById('action-panel').classList.add('open');
+}
+function scoutLocation(loc) {
+    if (state.resources.food >= CONFIG.costs.scout.food) {
+        state.resources.food -= CONFIG.costs.scout.food;
+        loc.scouted = true;
+        checkTask('scout');
+        closeActionPanel();
+        renderResources();
+        renderMap();
+    }
+}
+function buildBase(loc) {
+    if (state.resources.food >= 3 && state.resources.wood >= 2) {
+        state.resources.food -= 3;
+        state.resources.wood -= 2;
+        loc.baseBuilt = true;
+        state.peasants.total += 5; // ТЗ Секция 6: Город дает 5 крестьян
+        checkTask('base');
+        closeActionPanel();
+        renderResources();
+        renderMap();
+    }
 }
 // ============================================================
-// НОВАЯ ЛОГИКА: ВНУТРЕННИЙ ЭКРАН ЛЕСА (СУБКАРТА)
+// ВНУТРЕННИЙ ЭКРАН ЛЕСА
 // ============================================================
-function openSubMap(loc) {
-    state.currentSubMapLoc = loc;
+function openForestScreen(loc) {
+    state.currentForestLoc = loc;
     document.getElementById('map-screen').classList.remove('active');
     document.getElementById('submap-screen').classList.add('active');
-    renderSubMap(loc);
+    renderForestScreen(loc);
 }
 function backToGlobalMap() {
     closeActionPanel();
-    state.currentSubMapLoc = null;
-    state.selectedSubLoc = null;
+    state.currentForestLoc = null;
+    state.selectedForestTile = null;
     document.getElementById('submap-screen').classList.remove('active');
     document.getElementById('map-screen').classList.add('active');
     renderMap();
 }
-function renderSubMap(forestLoc) {
-    document.getElementById('submap-warehouses').textContent = forestLoc.warehouses || 0;
-    const grid = document.getElementById('submap-grid');
-    grid.innerHTML = '';
-    forestLoc.subLocs.forEach(function(sub) {
+function renderForestScreen(loc) {
+// Верхнее поле (Добыча 6х5)
+    const upperGrid = document.getElementById('submap-grid-upper');
+    upperGrid.innerHTML = '';
+    loc.forestData.upperTiles.forEach(tile => {
         const div = document.createElement('div');
-        div.className = 'sub-loc';
-        if (!sub.scouted) div.classList.add('fog');
-        if (sub.scouted && sub.id === 'wood_vein') div.classList.add('has-resource');
-        if (sub.hasWarehouse) div.classList.add('has-warehouse');
-        let workerText = sub.workers > 0 ? ' (' + sub.workers + '👨‍🌾)' : '';
-        div.innerHTML =
-            '' + (sub.scouted ? sub.icon : '❓') + '' +
-            '' + (sub.scouted ? sub.name : 'Чаща') + '' +
-            '' + workerText + '';
-        div.onclick = function() { onSubLocationClick(sub); };
-        grid.appendChild(div);
-    });
-}
-function onSubLocationClick(sub) {
-    if (state.gameOver) return;
-    state.selectedSubLoc = sub;
-    const panel = document.getElementById('action-panel');
-    const title = document.getElementById('action-title');
-    const desc = document.getElementById('action-desc');
-    const btns = document.getElementById('action-buttons');
-    btns.innerHTML = '';
-    title.textContent = sub.scouted ? sub.name : 'Неразведанная чаща';
-    if (!sub.scouted) {
-        desc.textContent = 'Этот квадрат леса зарос дикими колючками. Разведайте его, чтобы найти ресурсы или место под склад.';
-        addBtn(btns, '🔍 Разведать квадрат (1 🍞)', function() { scoutSubLocation(sub); }, state.resources.food >= CONFIG.costs.subScout.food);
-    } else {
-        if (sub.id === 'wood_vein') {
-            let prodRate = sub.hasWarehouse ? '2 🪵 (Со складом)' : '1 🪵';
-            desc.textContent = 'Древесная жила. Сюда можно отправить крестьян. Каждый приносит ' + prodRate + ' в такт. Сейчас работает: ' + sub.workers + ' чел.';
-            addBtn(btns, '➕ Назначить крестьянина (Свободно: ' + getFreePeasantsCount() + ')', function() { assignSubPeasant(sub); }, getFreePeasantsCount() > 0);
-            addBtn(btns, '➖ Убрать крестьянина', function() { removeSubPeasant(sub); }, sub.workers > 0);
-            if (!sub.hasWarehouse) {
-                addBtn(btns, '🏠 Построить Склад (10 🪙)', function() { buildWarehouse(sub); }, state.resources.gold >= CONFIG.costs.buildWarehouse.gold);
+        div.className = 'forest-tile';
+        if (!tile.scouted) {
+            div.classList.add('upper-fog');
+            div.innerHTML = '❓';
+// Проверяем ТЗ: Открывать можно только соседние с уже открытыми
+            if (isAdjacentInForest(tile, loc.forestData.upperTiles)) {
+                div.onclick = () => onForestUpperClick(tile);
+            } else {
+                div.classList.add('locked');
             }
         } else {
-            desc.textContent = 'Обычная лесная прогалина. Добывать дерево здесь нельзя, но площадка подходит для логистики.';
-            if (!sub.hasWarehouse) {
-                addBtn(btns, '🏠 Построить Склад (10 🪙)', function() { buildWarehouse(sub); }, state.resources.gold >= CONFIG.costs.buildWarehouse.gold);
+            if (tile.depleted || tile.id === 'empty') {
+                div.classList.add('upper-empty');
+                div.innerHTML = <span class="tile-icon">${tile.icon}</span>;
             } else {
-                desc.textContent = 'Здесь построен лесной Склад. Он улучшает общую координацию лесорубов.';
+                div.classList.add(tile.hasPeasant ? 'upper-working' : 'upper-resource');
+                div.innerHTML = <span class="tile-icon">${tile.icon}</span> <span class="tile-badge">${tile.hasPeasant ? '👨‍🌾 ' : ''}${tile.amount}</span>;
+            }
+            div.onclick = () => onForestUpperClick(tile);
+        }
+        upperGrid.appendChild(div);
+    });
+// Нижнее поле (Склады 1х7)
+    const lowerGrid = document.getElementById('submap-grid-lower');
+    lowerGrid.innerHTML = '';
+    loc.forestData.lowerWarehouses.forEach(w => {
+        const div = document.createElement('div');
+        div.className = 'forest-tile';
+        if (!w.built) {
+            div.classList.add('lower-empty');
+            div.innerHTML = '➕';
+        } else {
+            div.classList.add('lower-warehouse');
+            const resDef = FOREST_RES_TYPES.find(r => r.id === w.storedType);
+            div.innerHTML = <span class="tile-icon">🏠</span> <span class="tile-badge">${resDef ? resDef.icon : '⬜'}:${w.amount}</span>;
+        }
+        div.onclick = () => onForestLowerClick(w);
+        lowerGrid.appendChild(div);
+    });
+}
+function isAdjacentInForest(tile, allTiles) {
+    const w = CONFIG.forest.upperWidth;
+    const neighbors = [];
+    if (tile.col > 0) neighbors.push(tile.index - 1);
+    if (tile.col < w - 1) neighbors.push(tile.index + 1);
+    if (tile.row > 0) neighbors.push(tile.index - w);
+    if (tile.row < CONFIG.forest.upperHeight - 1) neighbors.push(tile.index + w);
+    return neighbors.some(nIdx => allTiles[nIdx].scouted);
+}
+// ============================================================
+// КЛИКИ ПО ЛЕСНЫМ ТАЙЛАМ & ЛОГИКА ДЕЙСТВИЙ (ТЗ СЕКЦИИ 4 и 5)
+// ============================================================
+function onForestUpperClick(tile) {
+    if (state.gameOver) return;
+    state.selectedForestTile = { type: 'upper', data: tile };
+    refreshForestActionPanel();
+}
+function onForestLowerClick(warehouse) {
+    if (state.gameOver) return;
+    state.selectedForestTile = { type: 'lower', data: warehouse };
+    refreshForestActionPanel();
+}
+function refreshForestActionPanel() {
+    const type = state.selectedForestTile.type;
+    const item = state.selectedForestTile.data;
+    const btns = document.getElementById('action-buttons');
+    const title = document.getElementById('action-title');
+    const desc = document.getElementById('action-desc');
+    btns.innerHTML = '';
+    const panel = document.getElementById('action-panel');
+    if (type === 'upper') {
+        if (!item.scouted) {
+            title.textContent = 'Густая лесная чаща';
+            desc.textContent = Квадрат скрыт ветвями. Прорубить тропу к ресурсам?\nСтоимость: ${CONFIG.forest.unlockCostProvision} Еда.;
+            addBtn(btns, '🪓 Прорубить просеку', () => unlockForestSquare(item), state.resources.food >= CONFIG.forest.unlockCostProvision);
+        } else {
+            title.textContent = item.name;
+            if (item.id === 'empty') {
+                desc.textContent = 'Здесь нет ничего ценного, обычная поляна.';
+            } else {
+                desc.textContent = Осталось запасов: ${item.amount} единиц.\nКрестьян занято: ${item.hasPeasant ? '1' : '0'}.;
+                if (!item.hasPeasant) {
+                    const hasFree = getFreePeasantsCount() > 0;
+                    addBtn(btns, '👨‍🌾 Отправить добывать', () => togglePeasantOnSquare(item, true), hasFree);
+                } else {
+                    addBtn(btns, '🛑 Отозвать крестьянина', () => togglePeasantOnSquare(item, false), true);
+                }
+            }
+        }
+    } else if (type === 'lower') {
+        const currentCount = state.currentForestLoc.forestData.lowerWarehouses.filter(w => w.built).length;
+        if (!item.built) {
+            const cost = CONFIG.forest.warehouseCosts[currentCount] || 22;
+            title.textContent = 'Пустой слот под склад';
+            desc.textContent = Построить лесной склад для координации логов? Стоимость: ${cost} Древесина.;
+            addBtn(btns, 🪵 Построить склад (${cost} ед.), () => buildForestWarehouse(item, cost), state.resources.wood >= cost);
+        } else {
+            title.textContent = 'Лесной Склад';
+            const resDef = FOREST_RES_TYPES.find(r => r.id === item.storedType);
+            desc.textContent = Тип хранения: ${resDef ? resDef.name : 'Пусто'}.\nЗаполнено: ${item.amount} / ${CONFIG.forest.warehouseCapacity} ед.;
+// Кнопки смены ресурса (Секция 4.1-4.2)
+            FOREST_RES_TYPES.forEach(res => {
+                if (item.storedType !== res.id) {
+                    addBtn(btns, 📦 Хранить ${res.icon} ${res.name}, () => changeWarehouseResource(item, res.id), true);
+                }
+            });
+            if (item.storedType !== 'none') {
+                addBtn(btns, '🗑️ Сбросить фильтр склада', () => changeWarehouseResource(item, 'none'), true);
             }
         }
     }
     panel.classList.add('open');
 }
-function scoutSubLocation(sub) {
-    if (state.resources.food >= CONFIG.costs.subScout.food) {
-        state.resources.food -= CONFIG.costs.subScout.food;
-        sub.scouted = true;
+// Пошаговое открытие сетки (Секция 3.2)
+function unlockForestSquare(tile) {
+    if (state.resources.food >= CONFIG.forest.unlockCostProvision) {
+        state.resources.food -= CONFIG.forest.unlockCostProvision;
+        tile.scouted = true;
         renderResources();
-        renderSubMap(state.currentSubMapLoc);
-        onSubLocationClick(sub);
+        renderForestScreen(state.currentForestLoc);
+        onForestUpperClick(tile);
     }
 }
-function buildWarehouse(sub) {
-    if (state.resources.gold >= CONFIG.costs.buildWarehouse.gold) {
-        state.resources.gold -= CONFIG.costs.buildWarehouse.gold;
-        sub.hasWarehouse = true;
-        state.currentSubMapLoc.warehouses = (state.currentSubMapLoc.warehouses || 0) + 1;
-        renderResources();
-        renderSubMap(state.currentSubMapLoc);
-        onSubLocationClick(sub);
+// Назначение рабочих (Секция 5.1 / 6)
+function togglePeasantOnSquare(tile, activate) {
+    if (activate) {
+        if (getFreePeasantsCount() > 0) {
+            tile.hasPeasant = true;
+        }
+    } else {
+        tile.hasPeasant = false;
     }
+    renderResources();
+    renderForestScreen(state.currentForestLoc);
+    onForestUpperClick(tile);
+}
+// Постройка склада по прогрессивной шкале (Секция 4.1)
+function buildForestWarehouse(warehouse, cost) {
+    if (state.resources.wood >= cost) {
+        state.resources.wood -= cost;
+        warehouse.built = true;
+        warehouse.storedType = 'none';
+        warehouse.amount = 0;
+        renderResources();
+        renderForestScreen(state.currentForestLoc);
+        onForestLowerClick(warehouse);
+    }
+}
+// Смена ресурса со штрафом или бесплатно (Секция 4.2)
+function changeWarehouseResource(warehouse, newTypeId) {
+    if (warehouse.amount > 0) {
+        if (!confirm('Внимание! На складе есть запасы. При смене типа хранения они удалятся безвозвратно. Продолжить?')) {
+            return;
+        }
+    }
+    warehouse.storedType = newTypeId;
+    warehouse.amount = 0; // Полный сброс ресурсов
+    renderForestScreen(state.currentForestLoc);
+    onForestLowerClick(warehouse);
 }
 // ============================================================
-// КНОПКИ И ДЕЙСТВИЯ
+// СИСТЕМНЫЕ КНОПКИ И ВСПОМОГАТЕЛЬНЫЙ КОД
 // ============================================================
 function addBtn(container, label, onClick, enabled) {
     const btn = document.createElement('button');
@@ -523,48 +596,32 @@ function startMission() {
     document.getElementById('map-screen').classList.add('active');
     initState();
 }
-function scoutLocation(loc) {
-    if (state.resources.food >= CONFIG.costs.scout.food) {
-        state.resources.food -= CONFIG.costs.scout.food;
-        loc.scouted = true;
-        const anyScouted = state.locations.some(function(l) { return l.index !== 16 && l.scouted; });
-        if (anyScouted) {
-            checkTask('scout');
-        }
-        closeActionPanel();
-        renderResources();
-        renderMap();
-    }
-}
-function buildBase(loc) {
-    if (canAfford(CONFIG.costs.buildBase)) {
-        payCost(CONFIG.costs.buildBase);
-        loc.baseBuilt = true;
-        checkTask('base');
-        closeActionPanel();
-        renderResources();
-        renderMap();
-    }
-}
 function closeActionPanel() {
     document.getElementById('action-panel').classList.remove('open');
     state.selectedLoc = null;
-    state.selectedSubLoc = null;
+    state.selectedForestTile = null;
+}
+function checkTask(id) {
+    if (state.tasks[id] === false) {
+        state.tasks[id] = true;
+        renderCurrentTask();
+        const allDone = CONFIG.tasks.every(t => state.tasks[t.id]);
+        if (allDone) endGame(true, 'Победа! Все задачи миссии выполнены. Дремучие леса освоены!');
+    }
 }
 function endGame(isVictory, message) {
     state.gameOver = true;
     if (state.patriotTimer) clearInterval(state.patriotTimer);
+    if (state.extractionTimer) clearInterval(state.extractionTimer);
     const modal = document.getElementById('modal');
-    const title = document.getElementById('modal-title');
-    const text = document.getElementById('modal-text');
+    document.getElementById('modal-title').textContent = isVictory ? 'Победа!' : 'Поражение';
+    document.getElementById('modal-text').textContent = message;
     const btn = document.getElementById('modal-btn');
-    title.textContent = isVictory ? 'Победа!' : 'Поражение';
-    text.textContent = message;
     btn.textContent = isVictory ? 'Отлично' : 'Начать заново';
-    btn.onclick = function() {
+    btn.onclick = () => {
         modal.classList.remove('open');
         if (!isVictory) {
-            if (state.currentSubMapLoc) backToGlobalMap();
+            if (state.currentForestLoc) backToGlobalMap();
             document.getElementById('map-screen').classList.remove('active');
             document.getElementById('briefing').classList.add('active');
         }

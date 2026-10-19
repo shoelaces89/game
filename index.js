@@ -1,44 +1,28 @@
 'use strict';
 
 // ============================================================
-// КОНФИГ И БАЗОВЫЕ КОНСТАНТЫ
+// КОНФИГ
 // ============================================================
 const CONFIG = {
     map: { cols: 4, rows: 5 },
 
-    // Стартовые ресурсы (док. «Город», п.5.1)
-    startingResources: {
-        wood: 10,
-        provant: 20,
-        peasants: 5
-    },
+    startingResources: { wood: 10, provant: 20, peasants: 5 },
 
-    // Провиант
-    provant: {
-        // стартовый запас — часть resources.provant; тратится первым
-        // рожь из амбаров — заглушка, поле не реализовано
-        startingSupply: 20
-    },
-
-    // Стоимость разведки по кругу (док. «Общие», п.3.1)
+    // Стоимость разведки по кругу (Общие правила, п.3.1)
     scoutCostByRing: [1, 2, 3, 4, 5, 6, 7, 8],
 
-    // Разное
-    peasantCapacityPerSquare: 1,
     peasantExtractionMs: 5000,
 
-    // Город
     city: {
         stockadeCostWood: 150,
         missionTimeLimitSec: 600
     },
 
-    // Лес (док. «Лес»)
     forest: {
         upperWidth: 6,
         upperHeight: 5,
         upperTotal: 30,
-        resourceSquares: 3,          // 3 квадрата с древесиной
+        resourceSquares: 3,
         amountPerSquare: 75,
         unlockCostProvant: 1,
         warehouseCapacity: 100,
@@ -46,11 +30,21 @@ const CONFIG = {
         extractionTimeMs: 5000
     },
 
-    // Спец-параметры
+    field: {
+        width: 6,
+        height: 5,
+        total: 30,
+        barnCapacity: 100,
+        growthTimeSec: 60,
+        seedsPerSquare: 10,
+        yieldPerSquare: 50,
+        startingSeeds: 50,
+        barnCosts: [10, 12, 14, 16, 18, 20, 22]
+    },
+
     paternalismStart: 50,
     passionarityStart: 50,
 
-    // Задания (док. «Город», п.6)
     tasks: [
         { id: 'buildBase',     text: 'Построить базу' },
         { id: 'avoidHunger',   text: 'Избежать голода (амбар ржи ×100)' },
@@ -58,18 +52,18 @@ const CONFIG = {
     ]
 };
 
-// Ресурсы, которые можно хранить в лесу (док. «Лес», п.4.1 — «Пусто» или «древесина»)
-const FOREST_RES_TYPES = [
-    { id: 'wood', name: 'Древесина', icon: '🪵' }
-];
+// Растения (первая миссия — только рожь)
+const PLANTS = {
+    rye: { id: 'rye', name: 'Рожь', icon: '🌾' }
+};
 
 // ============================================================
-// ИГРОВОЕ СОСТОЯНИЕ
+// СОСТОЯНИЕ
 // ============================================================
 const state = {
     resources: {
-        provant: 0,        // стартовый запас (тратится первым)
-        wood: 0,           // суммарно по складам (для HUD)
+        provantStarting: 0,   // стартовый запас (тратится первым)
+        wood: 0,
         peasantsTotal: 0
     },
     paternalism: 50,
@@ -78,54 +72,57 @@ const state = {
     locations: [],
     selectedLoc: null,
     selectedForestTile: null,
+    selectedFieldTile: null,
+    selectedSeedType: 'rye',      // выбранное растение в окне «Семена»
     currentForestLoc: null,
     currentCityLoc: null,
+    currentFieldLoc: null,
     gameOver: false,
     missionStarted: false,
     missionTimeLeft: 0,
 
-    // Таймеры
-    patriotTimer: null,      // общий тик (патернализм/провиант)
-    extractionTimer: null,   // добыча в лесу
-    missionTimer: null,      // таймер миссии
-
-    // Заглушки под поле/амбары — появятся в следующем этапе
-    barns: { rye: 0 }
+    patriotTimer: null,
+    extractionTimer: null,
+    missionTimer: null,
+    fieldGrowthTimer: null
 };
 
 // ============================================================
-// ГЕНЕРАЦИЯ ДАННЫХ
+// УТИЛИТЫ
+// ============================================================
+function pickRandomDistinct(pool, count) {
+    const copy = pool.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, count);
+}
+
+// ============================================================
+// ГЕНЕРАЦИЯ ЛЕСА
 // ============================================================
 function generateForestData() {
     const tiles = [];
     const warehouses = [];
 
-    // Верхнее поле 6x5 = 30. Нижний ряд (row = 4) открыт сразу.
-    // Гарантированно первый открытый квадрат с ресурсом.
-    // Раскладка: 3 квадрата с древесиной по 75, остальные — пустые.
-    const resourceIndices = pickRandomDistinct(
-        // кандидаты — не угловые/любые, но для гарантии ставим в нижний ряд
-        // и ещё два в другие ряды
-        buildResourceCandidates(CONFIG.forest.upperWidth, CONFIG.forest.upperHeight),
-        CONFIG.forest.resourceSquares
-    );
+    const all = [];
+    for (let i = 0; i < CONFIG.forest.upperTotal; i++) all.push(i);
+    const resourceIndices = pickRandomDistinct(all, CONFIG.forest.resourceSquares);
 
-    // Гарантия: первый открытый квадрат (нижний ряд, col=0) — древесина.
-    // Если его нет в списке — заменяем первый элемент.
-    const guaranteedIndex = (CONFIG.forest.upperHeight - 1) * CONFIG.forest.upperWidth + 0;
-    if (!resourceIndices.includes(guaranteedIndex)) {
-        resourceIndices[0] = guaranteedIndex;
-    }
+    // Гарантия: первый открытый (нижний ряд, col=0) — с древесиной
+    const guaranteed = (CONFIG.forest.upperHeight - 1) * CONFIG.forest.upperWidth + 0;
+    if (!resourceIndices.includes(guaranteed)) resourceIndices[0] = guaranteed;
 
     for (let i = 0; i < CONFIG.forest.upperTotal; i++) {
         const col = i % CONFIG.forest.upperWidth;
         const row = Math.floor(i / CONFIG.forest.upperWidth);
         const isResource = resourceIndices.includes(i);
-        const isBottomRow = row === CONFIG.forest.upperHeight - 1;
+        const isBottom = row === CONFIG.forest.upperHeight - 1;
 
         tiles.push({
             index: i, col, row,
-            scouted: isBottomRow,
+            scouted: isBottom,
             id: isResource ? 'wood' : 'empty',
             name: isResource ? 'Древесина' : 'Пустой квадрат леса',
             icon: isResource ? '🪵' : '🌿',
@@ -136,31 +133,49 @@ function generateForestData() {
     }
 
     for (let i = 0; i < 7; i++) {
-        warehouses.push({
-            index: i,
-            built: false,
-            storedType: 'none',
-            amount: 0
-        });
+        warehouses.push({ index: i, built: false, storedType: 'none', amount: 0 });
     }
 
     return { upperTiles: tiles, lowerWarehouses: warehouses };
 }
 
-function buildResourceCandidates(width, height) {
-    // Все индексы верхнего поля
-    const arr = [];
-    for (let i = 0; i < width * height; i++) arr.push(i);
-    return arr;
+// ============================================================
+// ГЕНЕРАЦИЯ ПОЛЯ
+// ============================================================
+function generateFieldData() {
+    const squares = [];
+    for (let i = 0; i < CONFIG.field.total; i++) {
+        squares.push({
+            index: i,
+            planted: null,           // 'rye' | null
+            plantedAt: 0,
+            ready: false
+        });
+    }
+
+    const barns = [];
+    for (let i = 0; i < 7; i++) {
+        barns.push({ index: i, built: false, plantType: 'none', amount: 0 });
+    }
+
+    return {
+        squares,
+        barns,
+        seeds: { rye: CONFIG.field.startingSeeds }
+    };
 }
 
-function pickRandomDistinct(pool, count) {
-    const copy = pool.slice();
-    for (let i = copy.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [copy[i], copy[j]] = [copy[j], copy[i]];
+// ============================================================
+// ГЕНЕРАЦИЯ КАРТЫ
+// ============================================================
+function LOCATION_DEF(id) {
+    switch (id) {
+        case 'city':    return { name: 'Разрушенный город', icon: '🏚️' };
+        case 'forest':  return { name: 'Лес', icon: '🌲' };
+        case 'field':   return { name: 'Поле', icon: '🌾' };
+        case 'village': return { name: 'Село', icon: '🏘️' };
+        default:        return { name: 'Пустошь', icon: '⬜' };
     }
-    return copy.slice(0, count);
 }
 
 function generateMap() {
@@ -169,14 +184,11 @@ function generateMap() {
     const total = cols * rows;
     const locs = [];
 
-    // Город — нижний левый угол
+    // Город — нижний левый; лес и поле — соседние с городом
     const cityIndex = (rows - 1) * cols + 0;
-    // Лес — рядом с городом (соседний по ребру)
-    const forestIndex = cityIndex - 1; // (rows-1)*cols - 1, если col 0 -> берём индекс выше
-    // Поле — тоже рядом
-    const fieldIndex = cityIndex - cols;
+    const forestIndex = cityIndex - 1;    // сосед справа
+    const fieldIndex = cityIndex - cols;  // сосед сверху
 
-    // Гарантированные типы: city, forest, field, остальное — случайно
     const types = new Array(total).fill(null);
     types[cityIndex] = 'city';
     types[forestIndex] = 'forest';
@@ -192,8 +204,8 @@ function generateMap() {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const typeId = types[i];
+        const def = LOCATION_DEF(typeId);
 
-        let def = LOCATION_DEF(typeId);
         locs.push({
             index: i, col, row,
             id: typeId,
@@ -203,21 +215,14 @@ function generateMap() {
             scouted: i === cityIndex,
             baseBuilt: false,
             stockadeBuilt: false,
+            stockadeCollectedWood: 0,
             activeConstruction: null,
-            forestData: typeId === 'forest' ? generateForestData() : null
+            forestData: typeId === 'forest' ? generateForestData() : null,
+            fieldData:  typeId === 'field'  ? generateFieldData()  : null
         });
     }
-    return locs;
-}
 
-function LOCATION_DEF(id) {
-    switch (id) {
-        case 'city':    return { name: 'Разрушенный город', icon: '🏚️' };
-        case 'forest':  return { name: 'Лес', icon: '🌲' };
-        case 'field':   return { name: 'Поле', icon: '🌾' };
-        case 'village': return { name: 'Село', icon: '🏘️' };
-        default:        return { name: 'Пустошь', icon: '⬜' };
-    }
+    return locs;
 }
 
 // ============================================================
@@ -226,7 +231,7 @@ function LOCATION_DEF(id) {
 function initState() {
     stopAllTimers();
 
-    state.resources = { provant: 0, wood: 0, peasantsTotal: 0 };
+    state.resources = { provantStarting: 0, wood: 0, peasantsTotal: 0 };
     state.paternalism = CONFIG.paternalismStart;
     state.passionarity = CONFIG.passionarityStart;
     state.tasks = {};
@@ -235,12 +240,14 @@ function initState() {
     state.locations = generateMap();
     state.selectedLoc = null;
     state.selectedForestTile = null;
+    state.selectedFieldTile = null;
+    state.selectedSeedType = 'rye';
     state.currentForestLoc = null;
     state.currentCityLoc = null;
+    state.currentFieldLoc = null;
     state.gameOver = false;
     state.missionStarted = false;
     state.missionTimeLeft = 0;
-    state.barns = { rye: 0 };
 
     renderResources();
     renderMap();
@@ -251,20 +258,16 @@ function initState() {
 }
 
 function stopAllTimers() {
-    if (state.patriotTimer) { clearInterval(state.patriotTimer); state.patriotTimer = null; }
-    if (state.extractionTimer) { clearInterval(state.extractionTimer); state.extractionTimer = null; }
-    if (state.missionTimer) { clearInterval(state.missionTimer); state.missionTimer = null; }
+    ['patriotTimer', 'extractionTimer', 'missionTimer', 'fieldGrowthTimer'].forEach(k => {
+        if (state[k]) { clearInterval(state[k]); state[k] = null; }
+    });
 }
 
 function startTimers() {
-    if (state.patriotTimer) clearInterval(state.patriotTimer);
     state.patriotTimer = setInterval(gameTick, 10000);
-
-    if (state.extractionTimer) clearInterval(state.extractionTimer);
     state.extractionTimer = setInterval(forestExtractionTick, CONFIG.forest.extractionTimeMs);
-
-    if (state.missionTimer) clearInterval(state.missionTimer);
     state.missionTimer = setInterval(missionTick, 1000);
+    state.fieldGrowthTimer = setInterval(fieldGrowthTick, 1000);
 }
 
 function startMission() {
@@ -278,11 +281,7 @@ function startMission() {
 // ============================================================
 function gameTick() {
     if (state.gameOver) return;
-
-    // Патернализм медленно снижается, если есть провиант/амбары — тратим
-    if (state.paternalism > 0) {
-        state.paternalism = Math.max(0, state.paternalism - 1);
-    }
+    if (state.paternalism > 0) state.paternalism = Math.max(0, state.paternalism - 1);
     renderResources();
 }
 
@@ -293,6 +292,7 @@ function missionTick() {
     if (state.missionTimeLeft <= 0) {
         state.missionTimeLeft = 0;
         renderTimer();
+
         const hungerDone = state.tasks.avoidHunger;
         const stockadeDone = state.tasks.buildStockade;
 
@@ -316,21 +316,15 @@ function missionTick() {
 
 function forestExtractionTick() {
     if (state.gameOver) return;
-
     let needRender = false;
 
     state.locations.forEach(loc => {
         if (loc.id !== 'forest' || loc.owner !== 'player' || !loc.forestData) return;
-
         loc.forestData.upperTiles.forEach(tile => {
             if (!tile.hasPeasant || tile.depleted || tile.id === 'empty' || tile.amount <= 0) return;
-
-            // Ищем склад этого ресурса со свободным местом
             const warehouse = loc.forestData.lowerWarehouses.find(
                 w => w.built && w.storedType === tile.id && w.amount < CONFIG.forest.warehouseCapacity
             );
-
-            // Нет склада — пауза, крестьянин ждёт
             if (!warehouse) return;
 
             tile.amount -= 1;
@@ -349,7 +343,7 @@ function forestExtractionTick() {
     });
 
     if (needRender) {
-        renderResources();                 // суммарная древесина в HUD
+        renderResources();
         if (state.currentForestLoc) {
             renderForestScreen(state.currentForestLoc);
             if (state.selectedForestTile) refreshForestActionPanel();
@@ -357,17 +351,41 @@ function forestExtractionTick() {
     }
 }
 
+function fieldGrowthTick() {
+    if (state.gameOver) return;
+    let needRender = false;
+
+    state.locations.forEach(loc => {
+        if (loc.id !== 'field' || !loc.fieldData) return;
+        loc.fieldData.squares.forEach(sq => {
+            if (sq.planted && !sq.ready) {
+                const elapsed = (Date.now() - sq.plantedAt) / 1000;
+                if (elapsed >= CONFIG.field.growthTimeSec) {
+                    sq.ready = true;
+                    needRender = true;
+                } else if (state.currentFieldLoc === loc) {
+                    needRender = true; // обновляем прогресс-бар
+                }
+            }
+        });
+    });
+
+    if (needRender) {
+        if (state.currentFieldLoc) renderFieldScreen(state.currentFieldLoc);
+        if (state.selectedFieldTile) refreshFieldActionPanel();
+    }
+    // Проверка задания «Избежать голода» — тоже в тике
+    checkHungerTask();
+}
+
 // ============================================================
-// РЕНДЕР HUD
+// HUD
 // ============================================================
 function renderResources() {
-    const woodTotal = getWoodTotal();
-
-    document.getElementById('r-provant').textContent = state.resources.provant;
-    document.getElementById('r-wood').textContent = woodTotal;
+    document.getElementById('r-provant').textContent = getTotalProvant();
+    document.getElementById('r-wood').textContent = getWoodTotal();
     document.getElementById('r-peasants').textContent =
         getFreePeasants() + ' / ' + state.resources.peasantsTotal;
-
     document.getElementById('r-paternalism').textContent = state.paternalism;
     document.getElementById('r-passionarity').textContent = state.passionarity;
 
@@ -377,17 +395,13 @@ function renderResources() {
         fill.style.width = state.paternalism + '%';
         bar.setAttribute('aria-valuenow', state.paternalism);
     }
-
     renderTimer();
 }
 
 function renderTimer() {
     const el = document.getElementById('r-timer');
     if (!el) return;
-    if (!state.missionStarted) {
-        el.textContent = '--:--';
-        return;
-    }
+    if (!state.missionStarted) { el.textContent = '--:--'; return; }
     const t = Math.max(0, state.missionTimeLeft);
     const m = Math.floor(t / 60);
     const s = t % 60;
@@ -401,7 +415,7 @@ function renderCurrentTask() {
 }
 
 // ============================================================
-// РЕНДЕР КАРТЫ
+// КАРТА
 // ============================================================
 function renderMap() {
     const grid = document.getElementById('map-grid');
@@ -422,26 +436,19 @@ function renderMap() {
         if (!showInfo) div.classList.add('fog');
         if (loc.owner === 'player') div.classList.add('player');
         if (loc.id === 'city') div.classList.add('city');
+        if (loc.id === 'field') div.classList.add('field');
         if (loc.owner !== 'player' && !loc.scouted && !isAdj) div.classList.add('locked');
 
         let statusText = 'туман войны';
         if (loc.owner === 'player') {
-            if (loc.id === 'city') {
-                statusText = loc.baseBuilt ? 'под контролем' : 'требует постройки';
-            } else {
-                statusText = 'под контролем';
-            }
-        } else if (loc.scouted) {
-            statusText = 'разведано';
-        } else if (!isAdj) {
-            statusText = 'далеко';
-        }
+            if (loc.id === 'city') statusText = loc.baseBuilt ? 'под контролем' : 'требует постройки';
+            else statusText = 'под контролем';
+        } else if (loc.scouted) statusText = 'разведано';
+        else if (!isAdj) statusText = 'далеко';
 
         let badge = '';
         if (loc.id === 'city' && loc.activeConstruction === 'stockade') {
-            const cost = CONFIG.city.stockadeCostWood;
-            const have = getCityStockadeCollected(loc);
-            badge = `<div class="loc-construction-badge">🪵 Древесина: ${have}/${cost}</div>`;
+            badge = `<div class="loc-construction-badge">🪵 Древесина: ${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood}</div>`;
         }
 
         div.innerHTML = `
@@ -450,7 +457,6 @@ function renderMap() {
             <div class="loc-name">${showInfo ? loc.name : '???'}</div>
             <div class="loc-status">${statusText}</div>
         `;
-
         div.addEventListener('click', () => onLocationClick(loc));
         grid.appendChild(div);
     });
@@ -466,22 +472,119 @@ function isAdjacentToPlayer(loc) {
     return neighbors.some(nIdx => state.locations[nIdx].owner === 'player');
 }
 
-// Круг от города (для разведки)
 function getRingFromCity(loc) {
     const city = state.locations.find(l => l.id === 'city');
     if (!city) return 1;
-    // Манхэттен по сетке — аналог «круга» на графе
     return Math.abs(loc.col - city.col) + Math.abs(loc.row - city.row);
 }
 
 function getScoutCostForLoc(loc) {
     const ring = Math.max(1, getRingFromCity(loc));
-    const arr = CONFIG.scoutCostByRing;
-    return arr[Math.min(ring - 1, arr.length - 1)];
+    return CONFIG.scoutCostByRing[Math.min(ring - 1, CONFIG.scoutCostByRing.length - 1)];
 }
 
 // ============================================================
-// ВЗАИМОДЕЙСТВИЕ С КАРТОЙ
+// ПРОВИАНТ
+// ============================================================
+function getBarnsRyeTotal() {
+    let total = 0;
+    state.locations.forEach(loc => {
+        if (!loc.fieldData) return;
+        loc.fieldData.barns.forEach(b => {
+            if (b.built && b.plantType === 'rye') total += b.amount;
+        });
+    });
+    return total;
+}
+
+function getTotalProvant() {
+    return state.resources.provantStarting + getBarnsRyeTotal();
+}
+
+// Списание провианта: сначала стартовый запас, потом рожь из амбаров
+function spendProvant(amount) {
+    if (getTotalProvant() < amount) return false;
+    let need = amount;
+
+    // 1. Стартовый запас
+    const fromStarting = Math.min(state.resources.provantStarting, need);
+    state.resources.provantStarting -= fromStarting;
+    need -= fromStarting;
+
+    // 2. Рожь из амбаров (с самых полных)
+    if (need > 0) {
+        const barns = [];
+        state.locations.forEach(loc => {
+            if (!loc.fieldData) return;
+            loc.fieldData.barns.forEach(b => {
+                if (b.built && b.plantType === 'rye' && b.amount > 0) barns.push(b);
+            });
+        });
+        barns.sort((a, b) => b.amount - a.amount);
+        for (const b of barns) {
+            if (need <= 0) break;
+            const take = Math.min(b.amount, need);
+            b.amount -= take;
+            need -= take;
+        }
+    }
+
+    renderResources();
+    return true;
+}
+
+// ============================================================
+// ДРЕВЕСИНА
+// ============================================================
+function getForestWoodTotal(loc) {
+    if (!loc || !loc.forestData) return 0;
+    let total = 0;
+    loc.forestData.lowerWarehouses.forEach(w => {
+        if (w.built && w.storedType === 'wood') total += w.amount;
+    });
+    return total;
+}
+
+function spendForestWood(loc, amount) {
+    if (!loc || !loc.forestData) return false;
+    let need = amount;
+    const whs = loc.forestData.lowerWarehouses
+        .filter(w => w.built && w.storedType === 'wood' && w.amount > 0)
+        .sort((a, b) => b.amount - a.amount);
+    for (const w of whs) {
+        if (need <= 0) break;
+        const take = Math.min(w.amount, need);
+        w.amount -= take;
+        need -= take;
+    }
+    return need === 0;
+}
+
+function getWoodTotal() {
+    let total = 0;
+    state.locations.forEach(loc => {
+        if (loc.forestData) total += getForestWoodTotal(loc);
+    });
+    return total;
+}
+
+// ============================================================
+// КРЕСТЬЯНЕ
+// ============================================================
+function getAssignedPeasants() {
+    let assigned = 0;
+    state.locations.forEach(loc => {
+        if (!loc.forestData) return;
+        loc.forestData.upperTiles.forEach(t => { if (t.hasPeasant) assigned++; });
+    });
+    return assigned;
+}
+function getFreePeasants() {
+    return Math.max(0, state.resources.peasantsTotal - getAssignedPeasants());
+}
+
+// ============================================================
+// КЛИК ПО ЛОКАЦИИ
 // ============================================================
 function onLocationClick(loc) {
     if (state.gameOver) return;
@@ -498,12 +601,10 @@ function onLocationClick(loc) {
 
     if (!loc.scouted && loc.owner !== 'player') {
         const cost = getScoutCostForLoc(loc);
-        desc.textContent =
-            `Локация скрыта туманом войны.\nСтоимость разведки: ${cost} 🍞 (круг ${getRingFromCity(loc)}).`;
-        addBtn(btns, `🔍 Разведать (${cost} 🍞)`, () => scoutLocation(loc),
-            state.resources.provant >= cost);
+        desc.textContent = `Стоимость разведки: ${cost} 🍞 (круг ${getRingFromCity(loc)}).`;
+        addBtn(btns, `🔍 Разведать (${cost} 🍞)`, () => scoutLocation(loc), getTotalProvant() >= cost);
     } else if (loc.owner !== 'player' && loc.scouted) {
-        desc.textContent = 'Земля разведана. Присоедините её к своим владениям.';
+        desc.textContent = 'Земля разведана. Присоедините её.';
         addBtn(btns, '🚩 Присоединить мирно', () => {
             loc.owner = 'player';
             closeActionPanel();
@@ -511,16 +612,13 @@ function onLocationClick(loc) {
         }, true);
     } else if (loc.id === 'city') {
         desc.textContent = cityDescription(loc);
-        addBtn(btns, '🚪 Зайти в город', () => {
-            closeActionPanel();
-            openCityScreen(loc);
-        }, true);
+        addBtn(btns, '🚪 Зайти в город', () => { closeActionPanel(); openCityScreen(loc); }, true);
     } else if (loc.id === 'forest') {
         desc.textContent = forestDescription(loc);
-        addBtn(btns, '🚪 Зайти в лес', () => {
-            closeActionPanel();
-            openForestScreen(loc);
-        }, true);
+        addBtn(btns, '🚪 Зайти в лес', () => { closeActionPanel(); openForestScreen(loc); }, true);
+    } else if (loc.id === 'field') {
+        desc.textContent = fieldDescription(loc);
+        addBtn(btns, '🚪 Зайти на поле', () => { closeActionPanel(); openFieldScreen(loc); }, true);
     } else {
         desc.textContent = 'Тихая земля. Пока здесь нечего делать.';
     }
@@ -529,16 +627,11 @@ function onLocationClick(loc) {
 }
 
 function cityDescription(loc) {
-    if (!loc.baseBuilt) return 'Город разрушен. Постройте базу, чтобы получить подданных.';
-    let s = 'Город под контролем.\n';
-    if (loc.activeConstruction === 'stockade') {
-        s += `Идёт стройка: Частокол (${getCityStockadeCollected(loc)}/${CONFIG.city.stockadeCostWood} 🪵).`;
-    } else if (loc.stockadeBuilt) {
-        s += 'Частокол построен. Город защищён.';
-    } else {
-        s += 'Частокол не начат.';
-    }
-    return s;
+    if (!loc.baseBuilt) return 'Город разрушен. Постройте базу.';
+    if (loc.stockadeBuilt) return 'Город под контролем. Частокол построен.';
+    if (loc.activeConstruction === 'stockade')
+        return `Идёт стройка: Частокол (${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood} 🪵).`;
+    return 'Город под контролем. Частокол не начат.';
 }
 
 function forestDescription(loc) {
@@ -547,7 +640,7 @@ function forestDescription(loc) {
     loc.forestData.lowerWarehouses.forEach((w, i) => {
         if (w.built) {
             builtAny = true;
-            const resName = FOREST_RES_TYPES.find(r => r.id === w.storedType)?.name || 'Пусто';
+            const resName = w.storedType === 'wood' ? 'Древесина' : 'Пусто';
             s += `• Слот ${i + 1}: ${resName} (${w.amount}/${CONFIG.forest.warehouseCapacity})\n`;
         }
     });
@@ -555,20 +648,32 @@ function forestDescription(loc) {
     return s;
 }
 
+function fieldDescription(loc) {
+    let s = 'Поле под контролем.\n';
+    let builtAny = false;
+    loc.fieldData.barns.forEach((b, i) => {
+        if (b.built) {
+            builtAny = true;
+            const plantName = b.plantType === 'rye' ? 'Рожь' : 'Пусто';
+            s += `• Амбар ${i + 1}: ${plantName} (${b.amount}/${CONFIG.field.barnCapacity})\n`;
+        }
+    });
+    if (!builtAny) s += 'Амбары отсутствуют.';
+    s += `\nСемена ржи: ${loc.fieldData.seeds.rye}.`;
+    return s;
+}
+
 function scoutLocation(loc) {
     const cost = getScoutCostForLoc(loc);
-    if (state.resources.provant < cost) return;
-    state.resources.provant -= cost;
+    if (!spendProvant(cost)) return;
     loc.scouted = true;
-
     notify(`Разведано: ${loc.name}`, 'success');
     closeActionPanel();
-    renderResources();
     renderMap();
 }
 
 // ============================================================
-// ПОСТРОЙКА БАЗЫ (док. «Город», п.4)
+// ПОСТРОЙКА БАЗЫ
 // ============================================================
 function buildBase(loc) {
     if (loc.baseBuilt) return;
@@ -576,17 +681,14 @@ function buildBase(loc) {
     loc.name = 'Город';
     loc.icon = '🏘️';
 
-    // Стартовые ресурсы
-    state.resources.provant += CONFIG.startingResources.provant;
+    state.resources.provantStarting += CONFIG.startingResources.provant;
     state.resources.wood += CONFIG.startingResources.wood;
     state.resources.peasantsTotal += CONFIG.startingResources.peasants;
 
-    // Запуск миссии
     state.missionStarted = true;
     state.missionTimeLeft = CONFIG.city.missionTimeLimitSec;
     startTimers();
 
-    // Задание «Построить базу» выполнено
     state.tasks.buildBase = true;
     renderCurrentTask();
 
@@ -599,7 +701,7 @@ function buildBase(loc) {
 }
 
 // ============================================================
-// ЭКРАН ГОРОДА
+// ГОРОД
 // ============================================================
 function openCityScreen(loc) {
     state.currentCityLoc = loc;
@@ -612,7 +714,6 @@ function renderCityScreen(loc) {
     if (!loc) return;
     document.getElementById('city-title').textContent = loc.baseBuilt ? 'Город' : 'Разрушенный город';
 
-    // Центральное здание
     const building = document.getElementById('city-building');
     const bIcon = building.querySelector('.city-building-icon');
     const bLabel = building.querySelector('.city-building-label');
@@ -621,22 +722,16 @@ function renderCityScreen(loc) {
     bIcon.textContent = loc.baseBuilt ? '🏛️' : '🏚️';
     bLabel.textContent = loc.baseBuilt ? 'Центральное здание' : 'Разрушенное здание';
 
-    // Зона частокола
     const stockade = document.getElementById('city-stockade-zone');
     stockade.classList.toggle('built', !!loc.stockadeBuilt);
     const sIcon = stockade.querySelector('.city-stockade-icon');
     const sLabel = stockade.querySelector('.city-stockade-label');
     sIcon.textContent = loc.stockadeBuilt ? '🛡️' : '🪵';
-    if (loc.stockadeBuilt) {
-        sLabel.textContent = 'Частокол построен';
-    } else if (loc.activeConstruction === 'stockade') {
-        sLabel.textContent =
-            `Частокол: ${getCityStockadeCollected(loc)}/${CONFIG.city.stockadeCostWood} 🪵`;
-    } else {
-        sLabel.textContent = 'Место под частокол';
-    }
+    if (loc.stockadeBuilt) sLabel.textContent = 'Частокол построен';
+    else if (loc.activeConstruction === 'stockade')
+        sLabel.textContent = `Частокол: ${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood} 🪵`;
+    else sLabel.textContent = 'Место под частокол';
 
-    // Список строек
     const list = document.getElementById('city-construction-list');
     list.innerHTML = '';
     if (loc.baseBuilt) {
@@ -646,7 +741,6 @@ function renderCityScreen(loc) {
         const isDone = loc.stockadeBuilt;
         if (isActive) item.classList.add('active');
         if (isDone) item.classList.add('disabled');
-
         item.innerHTML = `
             <span class="ci-name">${isDone ? '🛡️ Частокол' : (isActive ? '⏳ Частокол (в процессе)' : '🪵 Частокол')}</span>
             <span class="ci-cost">${isDone ? 'готово' : CONFIG.city.stockadeCostWood + ' 🪵'}</span>
@@ -659,13 +753,6 @@ function renderCityScreen(loc) {
             renderMap();
         });
         list.appendChild(item);
-
-        if (!loc.stockadeBuilt && loc.activeConstruction !== 'stockade') {
-            const hint = document.createElement('div');
-            hint.className = 'construction-item disabled';
-            hint.innerHTML = `<span class="ci-name">Выберите стройку</span><span class="ci-cost">нажмите на карточку</span>`;
-            list.appendChild(hint);
-        }
     } else {
         const hint = document.createElement('div');
         hint.className = 'construction-item disabled';
@@ -673,62 +760,41 @@ function renderCityScreen(loc) {
         list.appendChild(hint);
     }
 
-    // Панель заданий
     const ul = document.getElementById('city-tasks-list');
     ul.innerHTML = '';
     CONFIG.tasks.forEach(t => {
-        if (t.id === 'buildBase' && state.tasks.buildBase) return; // скрываем выполненное базовое
-        const done = state.tasks[t.id];
+        if (t.id === 'buildBase' && state.tasks.buildBase) return;
         const li = document.createElement('li');
         li.textContent = t.text;
-        if (done) li.classList.add('done');
+        if (state.tasks[t.id]) li.classList.add('done');
         ul.appendChild(li);
     });
 
-    // Обработчики клика по зданию и частоколу
     building.onclick = () => onCentralBuildingClick(loc);
     stockade.onclick = () => onStockadeClick(loc);
 }
 
 function onCentralBuildingClick(loc) {
-    if (!loc.baseBuilt) {
-        // Строим базу моментально и бесплатно
-        buildBase(loc);
-        return;
-    }
-    // Диалог с заданиями
+    if (!loc.baseBuilt) { buildBase(loc); return; }
     openTaskDialog(loc);
 }
 
 function openTaskDialog(loc) {
-    const activeTasks = CONFIG.tasks.filter(t => !state.tasks[t.id] && t.id !== 'buildBase');
-    let listHtml = '';
-    if (activeTasks.length === 0) {
-        listHtml = '<p>Все задания выполнены. Город процветает.</p>';
-    } else {
-        listHtml = '<ul>';
-        activeTasks.forEach(t => { listHtml += `<li>${t.text}</li>`; });
-        listHtml += '</ul>';
+    const active = CONFIG.tasks.filter(t => !state.tasks[t.id] && t.id !== 'buildBase');
+    let html = '<p>Боярин, люди напуганы. Одни боятся голода, другие — набегов. ' +
+        'Помоги им: наполни амбар и поставь частокол. Времени мало.</p>';
+    if (active.length === 0) html += '<p>Все задания выполнены. Город процветает.</p>';
+    else {
+        html += '<ul>';
+        active.forEach(t => { html += `<li>${t.text}</li>`; });
+        html += '</ul>';
     }
-
-    openModal(
-        'Воевода',
-        `<p>Боярин, люди напуганы. Одни боятся голода, другие — набегов. ` +
-        `Помоги им: наполни амбар и поставь частокол. Времени мало.</p>${listHtml}`,
-        'Закрыть',
-        () => closeModal()
-    );
+    openModal('Воевода', html, 'Закрыть', () => closeModal());
 }
 
 function onStockadeClick(loc) {
-    if (!loc.baseBuilt) {
-        notify('Сначала постройте базу', 'warn');
-        return;
-    }
-    if (loc.stockadeBuilt) {
-        notify('Частокол уже построен', 'success');
-        return;
-    }
+    if (!loc.baseBuilt) { notify('Сначала постройте базу', 'warn'); return; }
+    if (loc.stockadeBuilt) { notify('Частокол уже построен', 'success'); return; }
     if (loc.activeConstruction !== 'stockade') {
         loc.activeConstruction = 'stockade';
         notify('Начата стройка: Частокол (150 🪵)', 'warn');
@@ -736,20 +802,9 @@ function onStockadeClick(loc) {
         renderMap();
         return;
     }
-
-    // Стройка активна — пытаемся достроить (если есть собранное)
-    const have = getCityStockadeCollected(loc);
-    if (have >= CONFIG.city.stockadeCostWood) {
-        completeStockade(loc);
-    } else {
-        notify(`Нужно ещё ${CONFIG.city.stockadeCostWood - have} 🪵. Доставьте по маршруту.`, 'warn');
-    }
-}
-
-function getCityStockadeCollected(loc) {
-    // Заглушка: маршруты не реализованы (нет документа по Полю).
-    // Пока считаем «собранным» только то, что явно передано.
-    return loc.stockadeCollectedWood || 0;
+    const have = loc.stockadeCollectedWood;
+    if (have >= CONFIG.city.stockadeCostWood) completeStockade(loc);
+    else notify(`Нужно ещё ${CONFIG.city.stockadeCostWood - have} 🪵. Доставьте по маршруту.`, 'warn');
 }
 
 function completeStockade(loc) {
@@ -764,7 +819,7 @@ function completeStockade(loc) {
 }
 
 // ============================================================
-// ЭКРАН ЛЕСА
+// ЛЕС
 // ============================================================
 function openForestScreen(loc) {
     state.currentForestLoc = loc;
@@ -785,7 +840,6 @@ function backToGlobalMap() {
 function renderForestScreen(loc) {
     if (!loc || !loc.forestData) return;
 
-    // Верхнее поле
     const upper = document.getElementById('submap-grid-upper');
     upper.innerHTML = '';
     loc.forestData.upperTiles.forEach(tile => {
@@ -797,9 +851,7 @@ function renderForestScreen(loc) {
             div.innerHTML = `<span class="tile-icon">❓</span>`;
             if (isAdjacentInForest(tile, loc.forestData.upperTiles)) {
                 div.addEventListener('click', () => onForestUpperClick(tile));
-            } else {
-                div.classList.add('locked');
-            }
+            } else div.classList.add('locked');
         } else {
             if (tile.depleted || tile.id === 'empty') {
                 div.classList.add('upper-empty');
@@ -816,22 +868,20 @@ function renderForestScreen(loc) {
         upper.appendChild(div);
     });
 
-    // Нижнее поле
     const lower = document.getElementById('submap-grid-lower');
     lower.innerHTML = '';
     loc.forestData.lowerWarehouses.forEach(w => {
         const div = document.createElement('div');
         div.className = 'forest-tile';
-
         if (!w.built) {
             div.classList.add('lower-empty');
             div.innerHTML = `<span class="tile-icon">➕</span>`;
         } else {
             div.classList.add('lower-warehouse');
-            const resDef = FOREST_RES_TYPES.find(r => r.id === w.storedType);
+            const icon = w.storedType === 'wood' ? '🪵' : '⬜';
             div.innerHTML = `
                 <span class="tile-icon">🏠</span>
-                <span class="tile-badge">${resDef ? resDef.icon : '⬜'}:${w.amount}</span>
+                <span class="tile-badge">${icon}:${w.amount}</span>
             `;
         }
         div.addEventListener('click', () => onForestLowerClick(w));
@@ -849,9 +899,6 @@ function isAdjacentInForest(tile, allTiles) {
     return neighbors.some(nIdx => allTiles[nIdx].scouted);
 }
 
-// ============================================================
-// КЛИКИ ПО ЛЕСНЫМ ТАЙЛАМ
-// ============================================================
 function onForestUpperClick(tile) {
     if (state.gameOver) return;
     state.selectedForestTile = { type: 'upper', data: tile };
@@ -881,7 +928,7 @@ function refreshForestActionPanel() {
                 `Стоимость: ${CONFIG.forest.unlockCostProvant} 🍞 провианта.`;
             addBtn(btns, '🪓 Прорубить просеку',
                 () => unlockForestSquare(item),
-                state.resources.provant >= CONFIG.forest.unlockCostProvant);
+                getTotalProvant() >= CONFIG.forest.unlockCostProvant);
         } else {
             title.textContent = item.name;
             if (item.id === 'empty' || item.depleted) {
@@ -891,7 +938,6 @@ function refreshForestActionPanel() {
                     w => w.built && w.storedType === item.id && w.amount < CONFIG.forest.warehouseCapacity
                 );
                 const hasWarehouse = !!warehouse;
-
                 desc.textContent =
                     `Осталось запасов: ${item.amount} / ${CONFIG.forest.amountPerSquare} ед.\n` +
                     `Крестьян занято: ${item.hasPeasant ? '1' : '0'}.\n` +
@@ -900,14 +946,12 @@ function refreshForestActionPanel() {
                         : `⚠️ Нет склада под «${item.name}». Постройте в нижнем поле.`);
 
                 if (!item.hasPeasant) {
-                    const free = getFreePeasants() > 0;
                     addBtn(btns, '👨‍🌾 Отправить добывать',
                         () => togglePeasantOnSquare(item, true),
-                        free && hasWarehouse);
+                        getFreePeasants() > 0 && hasWarehouse);
                 } else {
                     addBtn(btns, '🛑 Отозвать крестьянина',
-                        () => togglePeasantOnSquare(item, false),
-                        true);
+                        () => togglePeasantOnSquare(item, false), true);
                 }
             }
         }
@@ -917,29 +961,23 @@ function refreshForestActionPanel() {
         if (!item.built) {
             const cost = CONFIG.forest.warehouseCosts[builtCount] || 22;
             const have = getForestWoodTotal(state.currentForestLoc);
-
             title.textContent = 'Пустой слот под склад';
             desc.textContent =
                 `Построить лесной склад для координации добычи?\n` +
                 `Стоимость: ${cost} 🪵.\n` +
                 `В складах локации: ${have} 🪵.`;
             addBtn(btns, `🪵 Построить склад (${cost} 🪵)`,
-                () => buildForestWarehouse(item, cost),
-                have >= cost);
+                () => buildForestWarehouse(item, cost), have >= cost);
         } else {
             title.textContent = 'Лесной склад';
-            const resDef = FOREST_RES_TYPES.find(r => r.id === item.storedType);
+            const resName = item.storedType === 'wood' ? 'Древесина' : 'Пусто';
             desc.textContent =
-                `Тип хранения: ${resDef ? resDef.name : 'Пусто'}.\n` +
+                `Тип хранения: ${resName}.\n` +
                 `Заполнено: ${item.amount} / ${CONFIG.forest.warehouseCapacity} ед.`;
-
-            FOREST_RES_TYPES.forEach(res => {
-                if (item.storedType !== res.id) {
-                    addBtn(btns, `📦 Хранить ${res.icon} ${res.name}`,
-                        () => changeWarehouseResource(item, res.id), true);
-                }
-            });
-
+            if (item.storedType !== 'wood') {
+                addBtn(btns, '📦 Хранить 🪵 Древесину',
+                    () => changeWarehouseResource(item, 'wood'), true);
+            }
             if (item.storedType !== 'none') {
                 addBtn(btns, '🗑️ Сбросить фильтр склада',
                     () => changeWarehouseResource(item, 'none'), true);
@@ -951,10 +989,8 @@ function refreshForestActionPanel() {
 }
 
 function unlockForestSquare(tile) {
-    if (state.resources.provant < CONFIG.forest.unlockCostProvant) return;
-    state.resources.provant -= CONFIG.forest.unlockCostProvant;
+    if (!spendProvant(CONFIG.forest.unlockCostProvant)) return;
     tile.scouted = true;
-    renderResources();
     renderForestScreen(state.currentForestLoc);
     onForestUpperClick(tile);
 }
@@ -975,13 +1011,10 @@ function buildForestWarehouse(warehouse, cost) {
     const loc = state.currentForestLoc;
     if (!loc) return;
     if (getForestWoodTotal(loc) < cost) return;
-
     spendForestWood(loc, cost);
-
     warehouse.built = true;
     warehouse.storedType = 'none';
     warehouse.amount = 0;
-
     renderResources();
     renderForestScreen(loc);
     onForestLowerClick(warehouse);
@@ -989,9 +1022,7 @@ function buildForestWarehouse(warehouse, cost) {
 
 function changeWarehouseResource(warehouse, newTypeId) {
     if (warehouse.amount > 0) {
-        if (!confirm('Внимание! На складе есть запасы. При смене типа хранения они удалятся безвозвратно. Продолжить?')) {
-            return;
-        }
+        if (!confirm('Внимание! На складе есть запасы. При смене типа хранения они удалятся безвозвратно. Продолжить?')) return;
     }
     warehouse.storedType = newTypeId;
     warehouse.amount = 0;
@@ -1000,27 +1031,237 @@ function changeWarehouseResource(warehouse, newTypeId) {
 }
 
 // ============================================================
-// РАБОТА С РЕСУРСАМИ ЛЕСА
+// ПОЛЕ
 // ============================================================
-function getForestWoodTotal(loc) {
-    if (!loc || !loc.forestData) return 0;
-    let total = 0;
-    loc.forestData.lowerWarehouses.forEach(w => {
-        if (w.built && w.storedType === 'wood') total += w.amount;
-    });
-    return total;
+function openFieldScreen(loc) {
+    state.currentFieldLoc = loc;
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('field-screen').classList.add('active');
+    renderFieldScreen(loc);
 }
 
-function spendForestWood(loc, amount) {
-    if (!loc || !loc.forestData) return false;
+function renderFieldScreen(loc) {
+    if (!loc || !loc.fieldData) return;
+
+    // === Поле 6×5 ===
+    const grid = document.getElementById('field-grid');
+    grid.innerHTML = '';
+    loc.fieldData.squares.forEach(sq => {
+        const div = document.createElement('div');
+        div.className = 'field-tile';
+
+        if (!sq.planted) {
+            div.classList.add('empty');
+            div.innerHTML = `<span class="tile-icon">·</span>`;
+        } else if (sq.ready) {
+            div.classList.add('ready');
+            const plant = PLANTS[sq.planted];
+            div.innerHTML = `<span class="tile-icon">${plant.icon}</span>`;
+        } else {
+            div.classList.add('growing');
+            const plant = PLANTS[sq.planted];
+            const elapsed = (Date.now() - sq.plantedAt) / 1000;
+            const pct = Math.max(0, Math.min(100, (elapsed / CONFIG.field.growthTimeSec) * 100));
+            div.innerHTML = `
+                <div class="growth-bar"><span style="width:${pct}%"></span></div>
+                <span class="tile-icon">${plant.icon}</span>
+            `;
+        }
+        div.addEventListener('click', () => onFieldTileClick(sq));
+        grid.appendChild(div);
+    });
+
+    // === Окно «Семена» ===
+    const seedsList = document.getElementById('seeds-list');
+    seedsList.innerHTML = '';
+    Object.values(PLANTS).forEach(plant => {
+        const count = loc.fieldData.seeds[plant.id] || 0;
+        const item = document.createElement('div');
+        item.className = 'seed-item';
+        if (state.selectedSeedType === plant.id) item.classList.add('selected');
+        if (count < CONFIG.field.seedsPerSquare) item.classList.add('empty');
+        item.innerHTML = `
+            <span class="seed-icon">${plant.icon}</span>
+            <span class="seed-name">${plant.name}</span>
+            <span class="seed-count">${count}</span>
+        `;
+        item.addEventListener('click', () => {
+            state.selectedSeedType = plant.id;
+            renderFieldScreen(loc);
+        });
+        seedsList.appendChild(item);
+    });
+
+    // === Амбары ===
+    const barnsGrid = document.getElementById('barns-grid');
+    barnsGrid.innerHTML = '';
+    loc.fieldData.barns.forEach(b => {
+        const div = document.createElement('div');
+        div.className = 'barn-tile';
+        if (!b.built) {
+            div.innerHTML = `<span class="tile-icon">➕</span>`;
+        } else {
+            div.classList.add('built');
+            const plant = PLANTS[b.plantType];
+            const icon = plant ? plant.icon : '⬜';
+            div.innerHTML = `
+                <span class="tile-icon">🏠</span>
+                <span class="tile-badge">${icon}:${b.amount}</span>
+            `;
+        }
+        div.addEventListener('click', () => onBarnClick(b));
+        barnsGrid.appendChild(div);
+    });
+}
+
+function onFieldTileClick(sq) {
+    if (state.gameOver || !state.currentFieldLoc) return;
+    const loc = state.currentFieldLoc;
+
+    // Если квадрат готов к сбору
+    if (sq.planted && sq.ready) {
+        tryHarvest(loc, sq);
+        return;
+    }
+
+    // Если растёт — предложить пересадку
+    if (sq.planted && !sq.ready) {
+        if (!confirm('На этом квадрате уже растёт растение. Пересадить? Затраченные семена не вернутся.')) return;
+        sq.planted = null;
+        sq.plantedAt = 0;
+        sq.ready = false;
+        plantOnSquare(loc, sq);
+        return;
+    }
+
+    // Пустой квадрат — сажаем
+    plantOnSquare(loc, sq);
+}
+
+function plantOnSquare(loc, sq) {
+    const plantId = state.selectedSeedType;
+    const seeds = loc.fieldData.seeds[plantId] || 0;
+    const cost = CONFIG.field.seedsPerSquare;
+
+    if (seeds < cost) {
+        notify(`Недостаточно семян ${PLANTS[plantId].name} (нужно ${cost}, есть ${seeds})`, 'warn');
+        return;
+    }
+    loc.fieldData.seeds[plantId] -= cost;
+    sq.planted = plantId;
+    sq.plantedAt = Date.now();
+    sq.ready = false;
+
+    renderFieldScreen(loc);
+}
+
+function tryHarvest(loc, sq) {
+    const plantId = sq.planted;
+    // Ищем амбар с этим растением и местом
+    const barn = loc.fieldData.barns.find(
+        b => b.built && b.plantType === plantId && b.amount < CONFIG.field.barnCapacity
+    );
+    if (!barn) {
+        notify('Нет амбара с местом под это растение. Освободите место.', 'warn');
+        return;
+    }
+    const yieldAmount = Math.min(
+        CONFIG.field.yieldPerSquare,
+        CONFIG.field.barnCapacity - barn.amount
+    );
+    barn.amount += yieldAmount;
+
+    // Если весь урожай не уместился — оставляем остаток на квадрате
+    const leftover = CONFIG.field.yieldPerSquare - yieldAmount;
+    if (leftover > 0) {
+        notify(`Амбар заполнен! Собрано ${yieldAmount}, осталось ${leftover} на квадрате.`, 'warn');
+        return;
+    }
+
+    sq.planted = null;
+    sq.plantedAt = 0;
+    sq.ready = false;
+
+    renderFieldScreen(loc);
+    checkHungerTask();
+}
+
+function onBarnClick(b) {
+    if (state.gameOver || !state.currentFieldLoc) return;
+    const loc = state.currentFieldLoc;
+    state.selectedFieldTile = { type: 'barn', data: b };
+    refreshFieldActionPanel(loc);
+}
+
+function refreshFieldActionPanel(loc) {
+    const sel = state.selectedFieldTile;
+    if (!sel) return;
+    const b = sel.data;
+    const btns = document.getElementById('action-buttons');
+    const title = document.getElementById('action-title');
+    const desc = document.getElementById('action-desc');
+    btns.innerHTML = '';
+
+    if (!b.built) {
+        const builtCount = loc.fieldData.barns.filter(x => x.built).length;
+        const cost = CONFIG.field.barnCosts[builtCount] || 22;
+        const have = getWoodTotal();
+        title.textContent = 'Пустой слот под амбар';
+        desc.textContent =
+            `Построить амбар?\nСтоимость: ${cost} 🪵.\nВ регионе: ${have} 🪵.`;
+        addBtn(btns, `🪵 Построить амбар (${cost} 🪵)`,
+            () => buildBarn(b, cost), have >= cost);
+    } else {
+        title.textContent = 'Амбар';
+        const plantName = b.plantType === 'rye' ? 'Рожь' : 'Пусто';
+        desc.textContent = `Растение: ${plantName}.\nЗаполнено: ${b.amount}/${CONFIG.field.barnCapacity}.`;
+
+        // Смена растения
+        if (b.plantType !== 'rye') {
+            addBtn(btns, '📦 Хранить 🌾 Рожь', () => changeBarnPlant(b, 'rye'), true);
+        }
+        if (b.plantType !== 'none') {
+            addBtn(btns, '🗑️ Сбросить (Пусто)', () => changeBarnPlant(b, 'none'), true);
+        }
+    }
+    document.getElementById('action-panel').classList.add('open');
+}
+
+function buildBarn(b, cost) {
+    const loc = state.currentFieldLoc;
+    if (!loc) return;
+    if (!spendGlobalWood(cost)) return;
+    b.built = true;
+    b.plantType = 'none';
+    b.amount = 0;
+    renderResources();
+    renderFieldScreen(loc);
+    onBarnClick(b);
+}
+
+function changeBarnPlant(b, newType) {
+    if (b.amount > 0) {
+        if (!confirm('На амбаре есть запас. При смене растения он удалится безвозвратно. Продолжить?')) return;
+    }
+    b.plantType = newType;
+    b.amount = 0;
+    renderFieldScreen(state.currentFieldLoc);
+    onBarnClick(b);
+}
+
+// Общая трата древесины по всем складам всех локаций (с самых полных)
+function spendGlobalWood(amount) {
+    if (getWoodTotal() < amount) return false;
     let need = amount;
-
-    // Списываем начиная с самого полного склада (док. «Лес», п.4.4)
-    const warehouses = loc.forestData.lowerWarehouses
-        .filter(w => w.built && w.storedType === 'wood' && w.amount > 0)
-        .sort((a, b) => b.amount - a.amount);
-
-    for (const w of warehouses) {
+    const whs = [];
+    state.locations.forEach(loc => {
+        if (!loc.forestData) return;
+        loc.forestData.lowerWarehouses.forEach(w => {
+            if (w.built && w.storedType === 'wood' && w.amount > 0) whs.push(w);
+        });
+    });
+    whs.sort((a, b) => b.amount - a.amount);
+    for (const w of whs) {
         if (need <= 0) break;
         const take = Math.min(w.amount, need);
         w.amount -= take;
@@ -1029,50 +1270,38 @@ function spendForestWood(loc, amount) {
     return need === 0;
 }
 
-function getWoodTotal() {
-    // Суммарно по всем складам всех локаций (для HUD)
-    let total = 0;
-    state.locations.forEach(loc => {
-        if (loc.forestData) total += getForestWoodTotal(loc);
-    });
-    return total;
-}
-
 // ============================================================
-// КРЕСТЬЯНЕ
+// ЗАДАНИЕ «ИЗБЕЖАТЬ ГОЛОДА»
 // ============================================================
-function getAssignedPeasants() {
-    let assigned = 0;
+function checkHungerTask() {
+    if (state.tasks.avoidHunger) return;
+    let full = false;
     state.locations.forEach(loc => {
-        if (!loc.forestData) return;
-        loc.forestData.upperTiles.forEach(tile => {
-            if (tile.hasPeasant) assigned++;
+        if (!loc.fieldData) return;
+        loc.fieldData.barns.forEach(b => {
+            if (b.built && b.plantType === 'rye' && b.amount >= CONFIG.field.barnCapacity) full = true;
         });
     });
-    return assigned;
-}
-
-function getFreePeasants() {
-    return Math.max(0, state.resources.peasantsTotal - getAssignedPeasants());
+    if (full) {
+        state.tasks.avoidHunger = true;
+        renderCurrentTask();
+        notify('Задание выполнено: «Избежать голода»!', 'success');
+        checkVictory();
+    }
 }
 
 // ============================================================
-// ЗАДАНИЯ И ПОБЕДА
+// ПОБЕДА
 // ============================================================
 function checkVictory() {
-    // Победа: оба задания выполнены (частокол + амбар)
-    // Амбар — заглушка (поле не реализовано). Проверяем только частокол + базу.
-    const hungerDone = state.tasks.avoidHunger;   // пока false — поле не реализовано
-    const stockadeDone = state.tasks.buildStockade;
-
-    if (stockadeDone && hungerDone) {
+    if (state.gameOver) return;
+    if (state.tasks.avoidHunger && state.tasks.buildStockade) {
         endGame(true, 'Угроза голода миновала, частокол даёт защиту поселению.');
     }
-    // Примечание: без реализации Поля победа недостижима — это ожидаемо.
 }
 
 // ============================================================
-// УВЕДОМЛЕНИЯ
+// УВЕДОМЛЕНИЯ / МОДАЛКА
 // ============================================================
 function notify(message, kind = '', duration = 3000) {
     const box = document.getElementById('notifications');
@@ -1093,9 +1322,6 @@ function hideNotifications() {
     if (box) box.innerHTML = '';
 }
 
-// ============================================================
-// МОДАЛКА
-// ============================================================
 function openModal(title, htmlText, buttonLabel, onButton) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-text').innerHTML = htmlText;
@@ -1127,6 +1353,7 @@ function closeActionPanel() {
     if (panel) panel.classList.remove('open');
     state.selectedLoc = null;
     state.selectedForestTile = null;
+    state.selectedFieldTile = null;
 }
 
 // ============================================================
@@ -1135,38 +1362,27 @@ function closeActionPanel() {
 function endGame(isVictory, message) {
     state.gameOver = true;
     stopAllTimers();
-
     openModal(
         isVictory ? 'Победа!' : 'Поражение',
         `<p>${message}</p>`,
         isVictory ? 'Отлично' : 'Перезапустить',
         () => {
             closeModal();
-            if (isVictory) {
-                // возврат к брифингу
-                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-                document.getElementById('briefing').classList.add('active');
-            } else {
-                // перезапуск миссии
-                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-                document.getElementById('briefing').classList.add('active');
-                initState();
-            }
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('briefing').classList.add('active');
+            if (!isVictory) initState();
         }
     );
 }
 
 // ============================================================
-// НАВЕШИВАНИЕ ОБРАБОТЧИКОВ
+// ОБРАБОТЧИКИ
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // Старт
     document.getElementById('btn-start').addEventListener('click', startMission);
 
-    // Возврат с леса
     document.getElementById('btn-back-to-map').addEventListener('click', backToGlobalMap);
 
-    // Возврат с города
     document.getElementById('btn-city-back').addEventListener('click', () => {
         state.currentCityLoc = null;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1174,14 +1390,22 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMap();
     });
 
-    // Отмена панели действий
+    document.getElementById('btn-field-back').addEventListener('click', () => {
+        state.currentFieldLoc = null;
+        state.selectedFieldTile = null;
+        closeActionPanel();
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('map-screen').classList.add('active');
+        renderMap();
+    });
+
     document.getElementById('btn-cancel-action').addEventListener('click', closeActionPanel);
 
-    // Нижняя панель
     document.getElementById('btn-nav-map').addEventListener('click', () => {
         closeActionPanel();
         state.currentForestLoc = null;
         state.currentCityLoc = null;
+        state.currentFieldLoc = null;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById('map-screen').classList.add('active');
         renderMap();
@@ -1189,18 +1413,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-nav-tasks').addEventListener('click', () => {
         const city = state.locations.find(l => l.id === 'city');
-        if (city && city.baseBuilt) {
-            openTaskDialog(city);
-        } else {
-            notify('Задания появятся после постройки базы', 'warn');
-        }
+        if (city && city.baseBuilt) openTaskDialog(city);
+        else notify('Задания появятся после постройки базы', 'warn');
     });
 
     document.getElementById('btn-nav-settings').addEventListener('click', () => {
         notify('Настройки будут доступны позже', 'warn');
     });
 
-    // Клик мимо модалки — закрыть
     document.getElementById('modal').addEventListener('click', (e) => {
         if (e.target.id === 'modal') closeModal();
     });

@@ -10,12 +10,10 @@
 
 <div id="app">
 
-    <!-- ============================================================
-         HUD (верхняя панель) — п.10.1 «Общих правил»
-         ============================================================ -->
+    <!-- HUD -->
     <header id="hud" aria-label="Панель ресурсов">
         <div class="hud-res">
-            <span title="Провиант">🍞 <b id="r-provant">0</b></span>
+            <span title="Провиант (стартовый запас + рожь в амбарах)">🍞 <b id="r-provant">0</b></span>
             <span title="Древесина (суммарно по складам)">🪵 <b id="r-wood">0</b></span>
             <span title="Крестьяне (свободные / всего)">👨‍🌾 <b id="r-peasants">0 / 0</b></span>
         </div>
@@ -26,34 +24,28 @@
         </div>
     </header>
 
-    <!-- Полоса патернализма (заменяет старую patriot-bar) -->
     <div id="paternalism-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
         <div id="paternalism-fill"></div>
     </div>
 
-    <!-- Контейнер для всплывающих уведомлений (п.10.3) -->
     <div id="notifications" aria-live="polite"></div>
 
-    <!-- ============================================================
-         ЭКРАН 1: БРИФИНГ
-         ============================================================ -->
+    <!-- ЭКРАН 1: БРИФИНГ -->
     <section class="screen active" id="briefing" aria-label="Брифинг миссии">
         <h1>Миссия 1: Земля предков</h1>
         <p>Ты — воевода, которому поручено основать поселение на диких землях. Вокруг — лес, поле и село, но они под туманом войны.</p>
-        <p>Построй город, разведай окрестности и наладь добычу в Дремучем Лесу. Начни с леса — без древесины ты ничего не построишь.</p>
+        <p>Построй город, разведай окрестности, наладь добычу в Дремучем Лесу и засей Поле. Начни с леса — без древесины ты ничего не построишь.</p>
         <div class="tasks-preview">
             <b>Задачи:</b><br>
             ☐ Построить базу (даёт 5 крестьян, 10 🪵, 20 🍞)<br>
-            ☐ Избежать голода (заполнить амбар рожью ×100)<br>
+            ☐ Избежать голода (заполнить амбар ржи ×100)<br>
             ☐ Построить частокол (150 🪵)<br>
             <span class="tasks-hint">Уложись в 10 минут после постройки базы.</span>
         </div>
         <button class="btn btn-primary" id="btn-start" type="button">Начать</button>
     </section>
 
-    <!-- ============================================================
-         ЭКРАН 2: ГЛОБАЛЬНАЯ КАРТА МИССИИ
-         ============================================================ -->
+    <!-- ЭКРАН 2: ГЛОБАЛЬНАЯ КАРТА -->
     <section class="screen" id="map-screen" aria-label="Карта миссии">
         <div id="map-scroll">
             <div id="map-grid"></div>
@@ -63,17 +55,13 @@
         </div>
     </section>
 
-    <!-- ============================================================
-         ЭКРАН 3: ГОРОД (внутренний)
-         ============================================================ -->
+    <!-- ЭКРАН 3: ГОРОД -->
     <section class="screen" id="city-screen" aria-label="Город">
         <div id="city-header">
             <button class="btn btn-close" id="btn-city-back" type="button">⬅ На карту</button>
             <h2 id="city-title">Город</h2>
         </div>
-
         <div id="city-container">
-            <!-- Центральное здание -->
             <div id="city-center-zone">
                 <div id="city-building" class="city-building ruined" title="Центральное здание">
                     <span class="city-building-icon">🏚️</span>
@@ -84,16 +72,10 @@
                     <span class="city-stockade-label">Место под частокол</span>
                 </div>
             </div>
-
-            <!-- Окно выбора приоритетной стройки -->
             <div id="city-construction-panel" class="city-panel">
                 <div class="city-panel-title">Приоритетная стройка</div>
-                <div id="city-construction-list" class="city-construction-list">
-                    <!-- заполняется из JS -->
-                </div>
+                <div id="city-construction-list" class="city-construction-list"></div>
             </div>
-
-            <!-- Панель заданий -->
             <div id="city-tasks-panel" class="city-panel">
                 <div class="city-panel-title">Задания</div>
                 <ul id="city-tasks-list" class="city-tasks-list"></ul>
@@ -101,27 +83,50 @@
         </div>
     </section>
 
-    <!-- ============================================================
-         ЭКРАН 4: ВНУТРЕННЯЯ КАРТА ЛЕСА
-         ============================================================ -->
+    <!-- ЭКРАН 4: ЛЕС -->
     <section class="screen" id="submap-screen" aria-label="Дремучий Лес">
         <div id="submap-header">
             <button class="btn btn-close" id="btn-back-to-map" type="button">⬅ На карту мира</button>
             <h2 id="submap-title">Дремучий Лес</h2>
         </div>
-
         <div id="forest-container">
             <div class="forest-section-title">Зона добычи (Верхнее поле)</div>
             <div id="submap-grid-upper"></div>
-
             <div class="forest-section-title">Склады (Нижнее поле)</div>
             <div id="submap-grid-lower"></div>
         </div>
     </section>
 
-    <!-- ============================================================
-         ПАНЕЛЬ ДЕЙСТВИЙ
-         ============================================================ -->
+    <!-- ЭКРАН 5: ПОЛЕ -->
+    <section class="screen" id="field-screen" aria-label="Поле">
+        <div id="field-header">
+            <button class="btn btn-close" id="btn-field-back" type="button">⬅ На карту</button>
+            <h2 id="field-title">Поле</h2>
+        </div>
+
+        <div id="field-container">
+            <!-- Верхняя часть: поле 6x5 + окно семян -->
+            <div id="field-top-row">
+                <div id="field-main">
+                    <div class="forest-section-title">Поле (6 × 5)</div>
+                    <div id="field-grid"></div>
+                </div>
+                <aside id="seeds-window" aria-label="Семена">
+                    <div class="seeds-title">🌱 Семена</div>
+                    <div class="seeds-list" id="seeds-list"></div>
+                    <div class="seeds-hint">Выберите растение, затем тапайте по квадратам поля.</div>
+                </aside>
+            </div>
+
+            <!-- Нижняя часть: амбары -->
+            <div id="barns-section">
+                <div class="forest-section-title">Амбары (Нижнее поле)</div>
+                <div id="barns-grid"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ПАНЕЛЬ ДЕЙСТВИЙ -->
     <aside id="action-panel" aria-label="Панель действий">
         <div id="action-title"></div>
         <div id="action-desc"></div>
@@ -129,18 +134,14 @@
         <button class="btn btn-close" id="btn-cancel-action" type="button">Отмена</button>
     </aside>
 
-    <!-- ============================================================
-         НИЖНЯЯ ПАНЕЛЬ (п.10.2)
-         ============================================================ -->
+    <!-- НИЖНЯЯ ПАНЕЛЬ -->
     <nav id="bottom-bar" aria-label="Нижняя панель">
         <button class="bottom-btn" id="btn-nav-map" type="button">🗺️ Карта</button>
         <button class="bottom-btn" id="btn-nav-tasks" type="button">📜 Задания</button>
         <button class="bottom-btn" id="btn-nav-settings" type="button">⚙️ Настройки</button>
     </nav>
 
-    <!-- ============================================================
-         МОДАЛЬНОЕ ОКНО (победа/поражение, диалоги)
-         ============================================================ -->
+    <!-- МОДАЛЬНОЕ ОКНО -->
     <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div id="modal-content">
             <h2 id="modal-title"></h2>

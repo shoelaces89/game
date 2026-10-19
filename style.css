@@ -16,7 +16,7 @@ html, body {
     overflow: hidden;
 }
 
-button, .loc, .forest-tile, .city-building, .city-stockade-zone {
+button, .loc, .forest-tile, .city-building, .city-stockade-zone, .field-tile, .barn-tile {
     user-select: none;
     -webkit-user-select: none;
 }
@@ -38,7 +38,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
 }
 
 /* ============================================================
-   HUD (верхняя панель) — п.10.1
+   HUD
    ============================================================ */
 #hud {
     display: flex;
@@ -70,7 +70,6 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     font-size: 11px;
 }
 
-/* Полоса патернализма */
 #paternalism-bar {
     height: 6px;
     background: #3a2a1a;
@@ -86,7 +85,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
 }
 
 /* ============================================================
-   УВЕДОМЛЕНИЯ (п.10.3)
+   УВЕДОМЛЕНИЯ
    ============================================================ */
 #notifications {
     position: absolute;
@@ -116,20 +115,9 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     line-height: 1.4;
 }
 
-.notification.warn {
-    border-left-color: #d0a040;
-    color: #f0c060;
-}
-
-.notification.error {
-    border-left-color: #b05050;
-    color: #e09090;
-}
-
-.notification.success {
-    border-left-color: #6ba040;
-    color: #a8e090;
-}
+.notification.warn  { border-left-color: #d0a040; color: #f0c060; }
+.notification.error { border-left-color: #b05050; color: #e09090; }
+.notification.success { border-left-color: #6ba040; color: #a8e090; }
 
 @keyframes notif-in {
     from { transform: translateY(-12px); opacity: 0; }
@@ -209,7 +197,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     flex: 1;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
-    padding-top: 44px; /* место под #current-task */
+    padding-top: 44px;
     min-height: 0;
 }
 
@@ -237,52 +225,23 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     text-align: center;
 }
 
-.loc:active {
-    transform: scale(0.95);
-}
+.loc:active { transform: scale(0.95); }
 
-.loc.player {
-    background: #3a5a3a;
-    border-color: #6ba040;
-}
-
-.loc.city {
-    background: #4a3a2a;
-    border-color: #f0d060;
-}
+.loc.player { background: #3a5a3a; border-color: #6ba040; }
+.loc.city   { background: #4a3a2a; border-color: #f0d060; }
+.loc.field  { background: #4a4a2a; border-color: #d0c040; }
 
 .loc.fog {
     background: #2a2418;
     border-style: dashed;
     color: #8a7a4e;
 }
+.loc.fog .loc-name { color: #8a7a4e; }
 
-.loc.fog .loc-name {
-    color: #8a7a4e;
-}
+.loc .loc-icon { font-size: 24px; margin-bottom: 2px; line-height: 1; }
+.loc .loc-name { font-size: 11px; font-weight: bold; text-align: center; line-height: 1.2; }
+.loc .loc-status { font-size: 9px; opacity: 0.75; margin-top: 2px; text-align: center; line-height: 1.2; }
 
-.loc .loc-icon {
-    font-size: 24px;
-    margin-bottom: 2px;
-    line-height: 1;
-}
-
-.loc .loc-name {
-    font-size: 11px;
-    font-weight: bold;
-    text-align: center;
-    line-height: 1.2;
-}
-
-.loc .loc-status {
-    font-size: 9px;
-    opacity: 0.75;
-    margin-top: 2px;
-    text-align: center;
-    line-height: 1.2;
-}
-
-/* Бейдж стройки на локации (п.6.1.1) */
 .loc .loc-construction-badge {
     position: absolute;
     top: -8px;
@@ -297,20 +256,9 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-.loc.locked {
-    opacity: 0.35;
-    cursor: not-allowed;
-    pointer-events: none;
-}
-
-.loc.locked .loc-icon {
-    filter: grayscale(1);
-}
-
-.loc.locked .loc-status {
-    color: #8a5a5a;
-    font-style: italic;
-}
+.loc.locked { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+.loc.locked .loc-icon { filter: grayscale(1); }
+.loc.locked .loc-status { color: #8a5a5a; font-style: italic; }
 
 #current-task {
     position: absolute;
@@ -331,10 +279,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
 /* ============================================================
    ЭКРАН ГОРОДА
    ============================================================ */
-#city-screen {
-    padding: 8px;
-    background: #231e14;
-}
+#city-screen { padding: 8px; background: #231e14; }
 
 #city-header {
     display: flex;
@@ -353,12 +298,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     flex-shrink: 0;
 }
 
-#city-title {
-    font-size: 16px;
-    color: #f0d060;
-    text-align: right;
-    flex: 1;
-}
+#city-title { font-size: 16px; color: #f0d060; text-align: right; flex: 1; }
 
 #city-container {
     flex: 1;
@@ -371,12 +311,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     padding-right: 2px;
 }
 
-#city-center-zone {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    align-items: stretch;
-}
+#city-center-zone { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
 
 .city-building {
     background: #3a2a1a;
@@ -393,30 +328,12 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     min-height: 100px;
     text-align: center;
 }
+.city-building:active { transform: scale(0.98); }
+.city-building.ruined { background: #2a2018; border-color: #5a4a2e; }
+.city-building.built  { background: #3a4a2a; border: 2px solid #6ba040; }
 
-.city-building:active {
-    transform: scale(0.98);
-}
-
-.city-building.ruined {
-    background: #2a2018;
-    border-color: #5a4a2e;
-}
-
-.city-building.built {
-    background: #3a4a2a;
-    border: 2px solid #6ba040;
-}
-
-.city-building-icon {
-    font-size: 40px;
-    line-height: 1;
-}
-
-.city-building-label {
-    font-size: 13px;
-    color: #d8d0b8;
-}
+.city-building-icon { font-size: 40px; line-height: 1; }
+.city-building-label { font-size: 13px; color: #d8d0b8; }
 
 .city-stockade-zone {
     background: #2a2418;
@@ -432,16 +349,12 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     font-size: 13px;
     color: #a09070;
 }
-
 .city-stockade-zone.built {
     background: #3a3a20;
     border: 2px solid #f0d060;
     color: #f0d060;
 }
-
-.city-stockade-icon {
-    font-size: 22px;
-}
+.city-stockade-icon { font-size: 22px; }
 
 .city-panel {
     background: #1f1a10;
@@ -460,11 +373,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     margin-bottom: 8px;
 }
 
-.city-construction-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
+.city-construction-list { display: flex; flex-direction: column; gap: 6px; }
 
 .construction-item {
     display: flex;
@@ -479,41 +388,13 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     transition: background 0.15s ease;
     font-size: 13px;
 }
+.construction-item:active { background: #3a3020; }
+.construction-item.active { border-color: #f0d060; background: #3a3018; color: #f0d060; }
+.construction-item.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.construction-item .ci-name { flex: 1; font-weight: bold; }
+.construction-item .ci-cost { font-size: 11px; color: #d8d0b8; white-space: nowrap; }
 
-.construction-item:active {
-    background: #3a3020;
-}
-
-.construction-item.active {
-    border-color: #f0d060;
-    background: #3a3018;
-    color: #f0d060;
-}
-
-.construction-item.disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    pointer-events: none;
-}
-
-.construction-item .ci-name {
-    flex: 1;
-    font-weight: bold;
-}
-
-.construction-item .ci-cost {
-    font-size: 11px;
-    color: #d8d0b8;
-    white-space: nowrap;
-}
-
-.city-tasks-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
+.city-tasks-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .city-tasks-list li {
     font-size: 13px;
     line-height: 1.4;
@@ -521,32 +402,14 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     position: relative;
     color: #d8d0b8;
 }
-
-.city-tasks-list li::before {
-    content: '☐';
-    position: absolute;
-    left: 0;
-    color: #a09070;
-}
-
-.city-tasks-list li.done {
-    color: #6ba040;
-    text-decoration: line-through;
-    opacity: 0.7;
-}
-
-.city-tasks-list li.done::before {
-    content: '☑';
-    color: #6ba040;
-}
+.city-tasks-list li::before { content: '☐'; position: absolute; left: 0; color: #a09070; }
+.city-tasks-list li.done { color: #6ba040; text-decoration: line-through; opacity: 0.7; }
+.city-tasks-list li.done::before { content: '☑'; color: #6ba040; }
 
 /* ============================================================
    ЭКРАН ЛЕСА
    ============================================================ */
-#submap-screen {
-    padding: 8px;
-    background: #1b2216;
-}
+#submap-screen { padding: 8px; background: #1b2216; }
 
 #submap-header {
     display: flex;
@@ -557,20 +420,8 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     flex-shrink: 0;
 }
 
-#btn-back-to-map {
-    margin-bottom: 0;
-    padding: 6px 10px;
-    font-size: 12px;
-    width: auto;
-    flex-shrink: 0;
-}
-
-#submap-title {
-    font-size: 16px;
-    color: #f0d060;
-    text-align: right;
-    flex: 1;
-}
+#btn-back-to-map { margin-bottom: 0; padding: 6px 10px; font-size: 12px; width: auto; flex-shrink: 0; }
+#submap-title { font-size: 16px; color: #f0d060; text-align: right; flex: 1; }
 
 #forest-container {
     flex: 1;
@@ -593,7 +444,6 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     padding-left: 6px;
 }
 
-/* Сетка добычи 6x5 */
 #submap-grid-upper {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -604,7 +454,6 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     border-radius: 6px;
 }
 
-/* Сетка складов 1x7 */
 #submap-grid-lower {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -630,65 +479,19 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     min-width: 0;
     overflow: hidden;
 }
+.forest-tile:active { transform: scale(0.95); }
 
-.forest-tile:active {
-    transform: scale(0.95);
-}
+.forest-tile.upper-fog { background: #0c100a; border-style: dashed; color: #2a3520; font-size: 14px; }
+.forest-tile.upper-empty { background: #1a2216; opacity: 0.55; }
+.forest-tile.upper-resource { background: #353820; border-color: #d0a040; }
+.forest-tile.upper-working { background: #203a25; border-color: #6ba040; box-shadow: inset 0 0 0 1px #6ba040; }
+.forest-tile.upper-depleted { background: #222; border-color: #444; opacity: 0.4; }
+.forest-tile.locked { cursor: not-allowed; pointer-events: none; opacity: 0.35; }
 
-/* Состояния верхней сетки */
-.forest-tile.upper-fog {
-    background: #0c100a;
-    border-style: dashed;
-    color: #2a3520;
-    font-size: 14px;
-}
+.forest-tile.lower-empty { background: #261f18; border: 1px dashed #6b5a2e; color: #8a7a4e; font-size: 16px; }
+.forest-tile.lower-warehouse { background: #423525; border: 1px solid #f0d060; }
 
-.forest-tile.upper-empty {
-    background: #1a2216;
-    opacity: 0.55;
-}
-
-.forest-tile.upper-resource {
-    background: #353820;
-    border-color: #d0a040;
-}
-
-.forest-tile.upper-working {
-    background: #203a25;
-    border-color: #6ba040;
-    box-shadow: inset 0 0 0 1px #6ba040;
-}
-
-.forest-tile.upper-depleted {
-    background: #222;
-    border-color: #444;
-    opacity: 0.4;
-}
-
-.forest-tile.locked {
-    cursor: not-allowed;
-    pointer-events: none;
-    opacity: 0.35;
-}
-
-/* Состояния складов */
-.forest-tile.lower-empty {
-    background: #261f18;
-    border: 1px dashed #6b5a2e;
-    color: #8a7a4e;
-    font-size: 16px;
-}
-
-.forest-tile.lower-warehouse {
-    background: #423525;
-    border: 1px solid #f0d060;
-}
-
-.forest-tile .tile-icon {
-    font-size: 16px;
-    line-height: 1;
-}
-
+.forest-tile .tile-icon { font-size: 16px; line-height: 1; }
 .forest-tile .tile-badge {
     position: absolute;
     bottom: 1px;
@@ -703,6 +506,241 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     white-space: nowrap;
     text-overflow: ellipsis;
     text-align: center;
+}
+
+/* ============================================================
+   ЭКРАН ПОЛЯ
+   ============================================================ */
+#field-screen { padding: 8px; background: #1e1c12; }
+
+#field-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+#btn-field-back { margin-bottom: 0; padding: 6px 10px; font-size: 12px; width: auto; flex-shrink: 0; }
+#field-title { font-size: 16px; color: #f0d060; text-align: right; flex: 1; }
+
+#field-container {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding-right: 2px;
+}
+
+#field-top-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+#field-main {
+    flex: 1 1 220px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#field-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 3px;
+    padding: 4px;
+    background: #2a2818;
+    border: 1px solid #5a5a2e;
+    border-radius: 6px;
+}
+
+.field-tile {
+    aspect-ratio: 1 / 1;
+    background: #4a3e22;
+    border: 1px solid #6b5a2e;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.1s ease, background-color 0.2s ease;
+    min-width: 0;
+    overflow: hidden;
+}
+.field-tile:active { transform: scale(0.95); }
+
+.field-tile.empty { background: #3a3218; }
+
+.field-tile.growing {
+    background: #4a5a20;
+    border-color: #8ac060;
+}
+
+.field-tile.ready {
+    background: #6b6b20;
+    border-color: #f0d060;
+    box-shadow: inset 0 0 0 1px #f0d060;
+    animation: ready-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ready-pulse {
+    0%, 100% { box-shadow: inset 0 0 0 1px #f0d060; }
+    50%      { box-shadow: inset 0 0 0 2px #fff0a0; }
+}
+
+.field-tile .tile-icon { font-size: 16px; line-height: 1; }
+.field-tile .tile-badge {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    font-size: 7px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    text-align: center;
+    padding: 0 2px;
+    border-radius: 0 0 3px 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.field-tile .growth-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: rgba(0, 0, 0, 0.4);
+}
+.field-tile .growth-bar > span {
+    display: block;
+    height: 100%;
+    background: #8ac060;
+    transition: width 0.4s linear;
+}
+
+/* Окно «Семена» */
+#seeds-window {
+    flex: 1 1 130px;
+    min-width: 120px;
+    max-width: 180px;
+    background: #1f1a10;
+    border: 1px solid #6b5a2e;
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.seeds-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #a0b090;
+    border-left: 2px solid #4a5a3a;
+    padding-left: 6px;
+}
+
+.seeds-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.seed-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #2a2418;
+    border: 1px solid #4a3a2a;
+    border-radius: 4px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.seed-item:active { background: #3a3020; }
+.seed-item.selected { border-color: #f0d060; background: #3a3018; color: #f0d060; }
+.seed-item.empty { opacity: 0.5; cursor: not-allowed; }
+.seed-item .seed-icon { font-size: 16px; }
+.seed-item .seed-name { flex: 1; font-weight: bold; }
+.seed-item .seed-count { font-size: 11px; opacity: 0.85; }
+
+.seeds-hint {
+    font-size: 10px;
+    color: #a09070;
+    font-style: italic;
+    line-height: 1.3;
+}
+
+/* Нижняя часть — амбары */
+#barns-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#barns-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: #19140f;
+    border: 1px solid #5a4a2e;
+    border-radius: 6px;
+}
+
+.barn-tile {
+    aspect-ratio: 1 / 1;
+    background: #2a2418;
+    border: 1px dashed #6b5a2e;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.1s ease, background-color 0.2s ease;
+    min-width: 0;
+    overflow: hidden;
+    color: #8a7a4e;
+    font-size: 16px;
+}
+.barn-tile:active { transform: scale(0.95); }
+
+.barn-tile.built {
+    background: #423525;
+    border: 1px solid #f0d060;
+    color: #f0d060;
+}
+
+.barn-tile .tile-icon { font-size: 16px; line-height: 1; }
+.barn-tile .tile-badge {
+    position: absolute;
+    bottom: 1px;
+    left: 1px;
+    right: 1px;
+    font-size: 8px;
+    background: rgba(0, 0, 0, 0.65);
+    padding: 0 2px;
+    border-radius: 2px;
+    color: #fff;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 /* ============================================================
@@ -725,34 +763,14 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     border-radius: 12px 12px 0 0;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
 }
+#action-panel.open { transform: translateY(0); }
 
-#action-panel.open {
-    transform: translateY(0);
-}
-
-#action-title {
-    font-size: 16px;
-    color: #f0d060;
-    margin-bottom: 10px;
-    line-height: 1.3;
-}
-
-#action-desc {
-    font-size: 12px;
-    color: #b0a890;
-    margin-bottom: 12px;
-    line-height: 1.5;
-    white-space: pre-line;
-}
-
-#action-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
+#action-title { font-size: 16px; color: #f0d060; margin-bottom: 10px; line-height: 1.3; }
+#action-desc { font-size: 12px; color: #b0a890; margin-bottom: 12px; line-height: 1.5; white-space: pre-line; }
+#action-buttons { display: flex; flex-direction: column; gap: 6px; }
 
 /* ============================================================
-   НИЖНЯЯ ПАНЕЛЬ (п.10.2)
+   НИЖНЯЯ ПАНЕЛЬ
    ============================================================ */
 #bottom-bar {
     display: flex;
@@ -777,10 +795,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     cursor: pointer;
     transition: background 0.15s ease;
 }
-
-.bottom-btn:active {
-    background: #3a3020;
-}
+.bottom-btn:active { background: #3a3020; }
 
 /* ============================================================
    КНОПКИ
@@ -800,33 +815,12 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     transition: background 0.15s ease, opacity 0.15s ease;
     text-align: center;
 }
-
-#action-buttons .btn {
-    margin-bottom: 0;
-}
-
-.btn:active:not(:disabled) {
-    background: #8a7040;
-}
-
-.btn:disabled {
-    background: #3a3020;
-    color: #6b5a2e;
-    cursor: not-allowed;
-    opacity: 0.7;
-}
-
-.btn-primary {
-    background: #6ba040;
-}
-
-.btn-primary:active:not(:disabled) {
-    background: #8ac060;
-}
-
-.btn-close {
-    background: #4a3a2a;
-}
+#action-buttons .btn { margin-bottom: 0; }
+.btn:active:not(:disabled) { background: #8a7040; }
+.btn:disabled { background: #3a3020; color: #6b5a2e; cursor: not-allowed; opacity: 0.7; }
+.btn-primary { background: #6ba040; }
+.btn-primary:active:not(:disabled) { background: #8ac060; }
+.btn-close { background: #4a3a2a; }
 
 /* ============================================================
    МОДАЛЬНОЕ ОКНО
@@ -841,10 +835,7 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     padding: 20px;
     z-index: 20;
 }
-
-#modal.open {
-    display: flex;
-}
+#modal.open { display: flex; }
 
 #modal-content {
     background: #2a2418;
@@ -857,33 +848,11 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     max-height: 80vh;
     overflow-y: auto;
 }
-
-#modal-content h2 {
-    font-size: 20px;
-    color: #f0d060;
-    margin-bottom: 12px;
-}
-
-#modal-text {
-    font-size: 14px;
-    line-height: 1.6;
-    margin-bottom: 16px;
-    color: #d8d0b8;
-    text-align: left;
-}
-
-#modal-text p {
-    margin-bottom: 8px;
-}
-
-#modal-text ul {
-    margin: 8px 0 8px 18px;
-}
-
-#modal-text li {
-    margin-bottom: 4px;
-    font-size: 13px;
-}
+#modal-content h2 { font-size: 20px; color: #f0d060; margin-bottom: 12px; }
+#modal-text { font-size: 14px; line-height: 1.6; margin-bottom: 16px; color: #d8d0b8; text-align: left; }
+#modal-text p { margin-bottom: 8px; }
+#modal-text ul { margin: 8px 0 8px 18px; }
+#modal-text li { margin-bottom: 4px; font-size: 13px; }
 
 /* ============================================================
    СКРОЛЛБАР
@@ -893,39 +862,33 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
 #action-panel::-webkit-scrollbar,
 #briefing::-webkit-scrollbar,
 #modal-content::-webkit-scrollbar,
-#city-container::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
+#city-container::-webkit-scrollbar,
+#field-container::-webkit-scrollbar { width: 6px; height: 6px; }
 
 #map-scroll::-webkit-scrollbar-track,
 #forest-container::-webkit-scrollbar-track,
 #action-panel::-webkit-scrollbar-track,
 #briefing::-webkit-scrollbar-track,
 #modal-content::-webkit-scrollbar-track,
-#city-container::-webkit-scrollbar-track {
-    background: transparent;
-}
+#city-container::-webkit-scrollbar-track,
+#field-container::-webkit-scrollbar-track { background: transparent; }
 
 #map-scroll::-webkit-scrollbar-thumb,
 #forest-container::-webkit-scrollbar-thumb,
 #action-panel::-webkit-scrollbar-thumb,
 #briefing::-webkit-scrollbar-thumb,
 #modal-content::-webkit-scrollbar-thumb,
-#city-container::-webkit-scrollbar-thumb {
-    background: #4a3a2a;
-    border-radius: 3px;
-}
+#city-container::-webkit-scrollbar-thumb,
+#field-container::-webkit-scrollbar-thumb { background: #4a3a2a; border-radius: 3px; }
 
 /* ============================================================
-   АДАПТИВ ПОД УЗКИЕ ЭКРАНЫ
+   АДАПТИВ
    ============================================================ */
 @media (max-width: 380px) {
     #map-grid {
         grid-template-columns: repeat(4, 82px);
         grid-template-rows: repeat(5, 82px);
     }
-
     .loc .loc-icon { font-size: 20px; }
     .loc .loc-name { font-size: 10px; }
     .loc .loc-status { font-size: 8px; }
@@ -934,6 +897,10 @@ button, .loc, .forest-tile, .city-building, .city-stockade-zone {
     .hud-res { gap: 6px; }
 
     .bottom-btn { font-size: 11px; padding: 7px 2px; }
+
+    #seeds-window { max-width: 140px; flex-basis: 110px; }
+    .seed-item { font-size: 11px; padding: 5px 6px; }
+    .field-tile .tile-icon { font-size: 13px; }
 }
 
 /* ============================================================

@@ -8,7 +8,6 @@ const CONFIG = {
 
     startingResources: { wood: 10, provant: 20, peasants: 5 },
 
-    // Стоимость разведки по кругу (Общие правила, п.3.1)
     scoutCostByRing: [1, 2, 3, 4, 5, 6, 7, 8],
 
     peasantExtractionMs: 5000,
@@ -52,7 +51,6 @@ const CONFIG = {
     ]
 };
 
-// Растения (первая миссия — только рожь)
 const PLANTS = {
     rye: { id: 'rye', name: 'Рожь', icon: '🌾' }
 };
@@ -62,8 +60,8 @@ const PLANTS = {
 // ============================================================
 const state = {
     resources: {
-        provantStarting: 0,   // стартовый запас (тратится первым)
-        wood: 0,
+        provantStarting: 0,   // стартовый запас провианта (тратится первым)
+        woodStarting: 0,      // стартовая древесина (тратится первой)
         peasantsTotal: 0
     },
     paternalism: 50,
@@ -73,7 +71,7 @@ const state = {
     selectedLoc: null,
     selectedForestTile: null,
     selectedFieldTile: null,
-    selectedSeedType: 'rye',      // выбранное растение в окне «Семена»
+    selectedSeedType: 'rye',
     currentForestLoc: null,
     currentCityLoc: null,
     currentFieldLoc: null,
@@ -110,7 +108,6 @@ function generateForestData() {
     for (let i = 0; i < CONFIG.forest.upperTotal; i++) all.push(i);
     const resourceIndices = pickRandomDistinct(all, CONFIG.forest.resourceSquares);
 
-    // Гарантия: первый открытый (нижний ряд, col=0) — с древесиной
     const guaranteed = (CONFIG.forest.upperHeight - 1) * CONFIG.forest.upperWidth + 0;
     if (!resourceIndices.includes(guaranteed)) resourceIndices[0] = guaranteed;
 
@@ -145,19 +142,12 @@ function generateForestData() {
 function generateFieldData() {
     const squares = [];
     for (let i = 0; i < CONFIG.field.total; i++) {
-        squares.push({
-            index: i,
-            planted: null,           // 'rye' | null
-            plantedAt: 0,
-            ready: false
-        });
+        squares.push({ index: i, planted: null, plantedAt: 0, ready: false });
     }
-
     const barns = [];
     for (let i = 0; i < 7; i++) {
         barns.push({ index: i, built: false, plantType: 'none', amount: 0 });
     }
-
     return {
         squares,
         barns,
@@ -184,10 +174,9 @@ function generateMap() {
     const total = cols * rows;
     const locs = [];
 
-    // Город — нижний левый; лес и поле — соседние с городом
     const cityIndex = (rows - 1) * cols + 0;
-    const forestIndex = cityIndex - 1;    // сосед справа
-    const fieldIndex = cityIndex - cols;  // сосед сверху
+    const forestIndex = cityIndex - 1;
+    const fieldIndex = cityIndex - cols;
 
     const types = new Array(total).fill(null);
     types[cityIndex] = 'city';
@@ -231,7 +220,7 @@ function generateMap() {
 function initState() {
     stopAllTimers();
 
-    state.resources = { provantStarting: 0, wood: 0, peasantsTotal: 0 };
+    state.resources = { provantStarting: 0, woodStarting: 0, peasantsTotal: 0 };
     state.paternalism = CONFIG.paternalismStart;
     state.passionarity = CONFIG.passionarityStart;
     state.tasks = {};
@@ -364,7 +353,7 @@ function fieldGrowthTick() {
                     sq.ready = true;
                     needRender = true;
                 } else if (state.currentFieldLoc === loc) {
-                    needRender = true; // обновляем прогресс-бар
+                    needRender = true;
                 }
             }
         });
@@ -372,9 +361,8 @@ function fieldGrowthTick() {
 
     if (needRender) {
         if (state.currentFieldLoc) renderFieldScreen(state.currentFieldLoc);
-        if (state.selectedFieldTile) refreshFieldActionPanel();
+        if (state.selectedFieldTile) refreshFieldActionPanel(state.currentFieldLoc);
     }
-    // Проверка задания «Избежать голода» — тоже в тике
     checkHungerTask();
 }
 
@@ -501,17 +489,14 @@ function getTotalProvant() {
     return state.resources.provantStarting + getBarnsRyeTotal();
 }
 
-// Списание провианта: сначала стартовый запас, потом рожь из амбаров
 function spendProvant(amount) {
     if (getTotalProvant() < amount) return false;
     let need = amount;
 
-    // 1. Стартовый запас
     const fromStarting = Math.min(state.resources.provantStarting, need);
     state.resources.provantStarting -= fromStarting;
     need -= fromStarting;
 
-    // 2. Рожь из амбаров (с самых полных)
     if (need > 0) {
         const barns = [];
         state.locations.forEach(loc => {
@@ -545,6 +530,45 @@ function getForestWoodTotal(loc) {
     return total;
 }
 
+function getWoodTotal() {
+    let total = state.resources.woodStarting || 0;
+    state.locations.forEach(loc => {
+        if (loc.forestData) total += getForestWoodTotal(loc);
+    });
+    return total;
+}
+
+// Универсальная трата древесины: сначала стартовая, потом склады (с самых полных)
+function spendGlobalWood(amount) {
+    if (getWoodTotal() < amount) return false;
+    let need = amount;
+
+    const fromStarting = Math.min(state.resources.woodStarting || 0, need);
+    state.resources.woodStarting -= fromStarting;
+    need -= fromStarting;
+
+    if (need > 0) {
+        const whs = [];
+        state.locations.forEach(loc => {
+            if (!loc.forestData) return;
+            loc.forestData.lowerWarehouses.forEach(w => {
+                if (w.built && w.storedType === 'wood' && w.amount > 0) whs.push(w);
+            });
+        });
+        whs.sort((a, b) => b.amount - a.amount);
+        for (const w of whs) {
+            if (need <= 0) break;
+            const take = Math.min(w.amount, need);
+            w.amount -= take;
+            need -= take;
+        }
+    }
+
+    renderResources();
+    return need === 0;
+}
+
+// Трата древесины внутри конкретной локации (с её складов, с самых полных)
 function spendForestWood(loc, amount) {
     if (!loc || !loc.forestData) return false;
     let need = amount;
@@ -558,14 +582,6 @@ function spendForestWood(loc, amount) {
         need -= take;
     }
     return need === 0;
-}
-
-function getWoodTotal() {
-    let total = 0;
-    state.locations.forEach(loc => {
-        if (loc.forestData) total += getForestWoodTotal(loc);
-    });
-    return total;
 }
 
 // ============================================================
@@ -682,8 +698,8 @@ function buildBase(loc) {
     loc.icon = '🏘️';
 
     state.resources.provantStarting += CONFIG.startingResources.provant;
-    state.resources.wood += CONFIG.startingResources.wood;
-    state.resources.peasantsTotal += CONFIG.startingResources.peasants;
+    state.resources.woodStarting    += CONFIG.startingResources.wood;
+    state.resources.peasantsTotal   += CONFIG.startingResources.peasants;
 
     state.missionStarted = true;
     state.missionTimeLeft = CONFIG.city.missionTimeLimitSec;
@@ -960,12 +976,12 @@ function refreshForestActionPanel() {
 
         if (!item.built) {
             const cost = CONFIG.forest.warehouseCosts[builtCount] || 22;
-            const have = getForestWoodTotal(state.currentForestLoc);
+            const have = getWoodTotal();
             title.textContent = 'Пустой слот под склад';
             desc.textContent =
                 `Построить лесной склад для координации добычи?\n` +
                 `Стоимость: ${cost} 🪵.\n` +
-                `В складах локации: ${have} 🪵.`;
+                `Всего древесины: ${have} 🪵.`;
             addBtn(btns, `🪵 Построить склад (${cost} 🪵)`,
                 () => buildForestWarehouse(item, cost), have >= cost);
         } else {
@@ -1010,8 +1026,7 @@ function togglePeasantOnSquare(tile, activate) {
 function buildForestWarehouse(warehouse, cost) {
     const loc = state.currentForestLoc;
     if (!loc) return;
-    if (getForestWoodTotal(loc) < cost) return;
-    spendForestWood(loc, cost);
+    if (!spendGlobalWood(cost)) return;
     warehouse.built = true;
     warehouse.storedType = 'none';
     warehouse.amount = 0;
@@ -1043,7 +1058,7 @@ function openFieldScreen(loc) {
 function renderFieldScreen(loc) {
     if (!loc || !loc.fieldData) return;
 
-    // === Поле 6×5 ===
+    // Поле 6×5
     const grid = document.getElementById('field-grid');
     grid.innerHTML = '';
     loc.fieldData.squares.forEach(sq => {
@@ -1071,7 +1086,7 @@ function renderFieldScreen(loc) {
         grid.appendChild(div);
     });
 
-    // === Окно «Семена» ===
+    // Окно «Семена»
     const seedsList = document.getElementById('seeds-list');
     seedsList.innerHTML = '';
     Object.values(PLANTS).forEach(plant => {
@@ -1092,7 +1107,7 @@ function renderFieldScreen(loc) {
         seedsList.appendChild(item);
     });
 
-    // === Амбары ===
+    // Амбары
     const barnsGrid = document.getElementById('barns-grid');
     barnsGrid.innerHTML = '';
     loc.fieldData.barns.forEach(b => {
@@ -1118,13 +1133,10 @@ function onFieldTileClick(sq) {
     if (state.gameOver || !state.currentFieldLoc) return;
     const loc = state.currentFieldLoc;
 
-    // Если квадрат готов к сбору
     if (sq.planted && sq.ready) {
         tryHarvest(loc, sq);
         return;
     }
-
-    // Если растёт — предложить пересадку
     if (sq.planted && !sq.ready) {
         if (!confirm('На этом квадрате уже растёт растение. Пересадить? Затраченные семена не вернутся.')) return;
         sq.planted = null;
@@ -1133,8 +1145,6 @@ function onFieldTileClick(sq) {
         plantOnSquare(loc, sq);
         return;
     }
-
-    // Пустой квадрат — сажаем
     plantOnSquare(loc, sq);
 }
 
@@ -1157,7 +1167,6 @@ function plantOnSquare(loc, sq) {
 
 function tryHarvest(loc, sq) {
     const plantId = sq.planted;
-    // Ищем амбар с этим растением и местом
     const barn = loc.fieldData.barns.find(
         b => b.built && b.plantType === plantId && b.amount < CONFIG.field.barnCapacity
     );
@@ -1171,7 +1180,6 @@ function tryHarvest(loc, sq) {
     );
     barn.amount += yieldAmount;
 
-    // Если весь урожай не уместился — оставляем остаток на квадрате
     const leftover = CONFIG.field.yieldPerSquare - yieldAmount;
     if (leftover > 0) {
         notify(`Амбар заполнен! Собрано ${yieldAmount}, осталось ${leftover} на квадрате.`, 'warn');
@@ -1188,9 +1196,8 @@ function tryHarvest(loc, sq) {
 
 function onBarnClick(b) {
     if (state.gameOver || !state.currentFieldLoc) return;
-    const loc = state.currentFieldLoc;
     state.selectedFieldTile = { type: 'barn', data: b };
-    refreshFieldActionPanel(loc);
+    refreshFieldActionPanel(state.currentFieldLoc);
 }
 
 function refreshFieldActionPanel(loc) {
@@ -1208,7 +1215,7 @@ function refreshFieldActionPanel(loc) {
         const have = getWoodTotal();
         title.textContent = 'Пустой слот под амбар';
         desc.textContent =
-            `Построить амбар?\nСтоимость: ${cost} 🪵.\nВ регионе: ${have} 🪵.`;
+            `Построить амбар?\nСтоимость: ${cost} 🪵.\nВсего древесины: ${have} 🪵.`;
         addBtn(btns, `🪵 Построить амбар (${cost} 🪵)`,
             () => buildBarn(b, cost), have >= cost);
     } else {
@@ -1216,7 +1223,6 @@ function refreshFieldActionPanel(loc) {
         const plantName = b.plantType === 'rye' ? 'Рожь' : 'Пусто';
         desc.textContent = `Растение: ${plantName}.\nЗаполнено: ${b.amount}/${CONFIG.field.barnCapacity}.`;
 
-        // Смена растения
         if (b.plantType !== 'rye') {
             addBtn(btns, '📦 Хранить 🌾 Рожь', () => changeBarnPlant(b, 'rye'), true);
         }
@@ -1247,27 +1253,6 @@ function changeBarnPlant(b, newType) {
     b.amount = 0;
     renderFieldScreen(state.currentFieldLoc);
     onBarnClick(b);
-}
-
-// Общая трата древесины по всем складам всех локаций (с самых полных)
-function spendGlobalWood(amount) {
-    if (getWoodTotal() < amount) return false;
-    let need = amount;
-    const whs = [];
-    state.locations.forEach(loc => {
-        if (!loc.forestData) return;
-        loc.forestData.lowerWarehouses.forEach(w => {
-            if (w.built && w.storedType === 'wood' && w.amount > 0) whs.push(w);
-        });
-    });
-    whs.sort((a, b) => b.amount - a.amount);
-    for (const w of whs) {
-        if (need <= 0) break;
-        const take = Math.min(w.amount, need);
-        w.amount -= take;
-        need -= take;
-    }
-    return need === 0;
 }
 
 // ============================================================

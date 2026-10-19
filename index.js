@@ -41,6 +41,14 @@ const CONFIG = {
         barnCosts: [10, 12, 14, 16, 18, 20, 22]
     },
 
+    // Маршруты (Общие правила, п.6)
+    route: {
+        maxPerTrip: 25,
+        secPerStep: 5,
+        stepDelayMs: 1000,
+        tickMs: 250
+    },
+
     paternalismStart: 50,
     passionarityStart: 50,
 
@@ -60,14 +68,16 @@ const PLANTS = {
 // ============================================================
 const state = {
     resources: {
-        provantStarting: 0,   // стартовый запас провианта (тратится первым)
-        woodStarting: 0,      // стартовая древесина (тратится первой)
+        provantStarting: 0,
+        woodStarting: 0,
         peasantsTotal: 0
     },
+    seeds: { rye: 50 },           // ← ОБЩИЕ семена на всю миссию
     paternalism: 50,
     passionarity: 50,
     tasks: {},
     locations: [],
+    routes: [],                    // активные маршруты
     selectedLoc: null,
     selectedForestTile: null,
     selectedFieldTile: null,
@@ -82,7 +92,8 @@ const state = {
     patriotTimer: null,
     extractionTimer: null,
     missionTimer: null,
-    fieldGrowthTimer: null
+    fieldGrowthTimer: null,
+    routeTimer: null
 };
 
 // ============================================================
@@ -97,8 +108,10 @@ function pickRandomDistinct(pool, count) {
     return copy.slice(0, count);
 }
 
+function getLocationByIdx(idx) { return state.locations[idx] || null; }
+
 // ============================================================
-// ГЕНЕРАЦИЯ ЛЕСА
+// ГЕНЕРАЦИЯ
 // ============================================================
 function generateForestData() {
     const tiles = [];
@@ -136,9 +149,6 @@ function generateForestData() {
     return { upperTiles: tiles, lowerWarehouses: warehouses };
 }
 
-// ============================================================
-// ГЕНЕРАЦИЯ ПОЛЯ
-// ============================================================
 function generateFieldData() {
     const squares = [];
     for (let i = 0; i < CONFIG.field.total; i++) {
@@ -148,16 +158,10 @@ function generateFieldData() {
     for (let i = 0; i < 7; i++) {
         barns.push({ index: i, built: false, plantType: 'none', amount: 0 });
     }
-    return {
-        squares,
-        barns,
-        seeds: { rye: CONFIG.field.startingSeeds }
-    };
+    // seeds теперь глобальные — в state.seeds
+    return { squares, barns };
 }
 
-// ============================================================
-// ГЕНЕРАЦИЯ КАРТЫ
-// ============================================================
 function LOCATION_DEF(id) {
     switch (id) {
         case 'city':    return { name: 'Разрушенный город', icon: '🏚️' };
@@ -221,12 +225,14 @@ function initState() {
     stopAllTimers();
 
     state.resources = { provantStarting: 0, woodStarting: 0, peasantsTotal: 0 };
+    state.seeds = { rye: CONFIG.field.startingSeeds };
     state.paternalism = CONFIG.paternalismStart;
     state.passionarity = CONFIG.passionarityStart;
     state.tasks = {};
     CONFIG.tasks.forEach(t => state.tasks[t.id] = false);
 
     state.locations = generateMap();
+    state.routes = [];
     state.selectedLoc = null;
     state.selectedForestTile = null;
     state.selectedFieldTile = null;
@@ -247,7 +253,7 @@ function initState() {
 }
 
 function stopAllTimers() {
-    ['patriotTimer', 'extractionTimer', 'missionTimer', 'fieldGrowthTimer'].forEach(k => {
+    ['patriotTimer', 'extractionTimer', 'missionTimer', 'fieldGrowthTimer', 'routeTimer'].forEach(k => {
         if (state[k]) { clearInterval(state[k]); state[k] = null; }
     });
 }
@@ -257,6 +263,7 @@ function startTimers() {
     state.extractionTimer = setInterval(forestExtractionTick, CONFIG.forest.extractionTimeMs);
     state.missionTimer = setInterval(missionTick, 1000);
     state.fieldGrowthTimer = setInterval(fieldGrowthTick, 1000);
+    state.routeTimer = setInterval(routesTick, CONFIG.route.tickMs);
 }
 
 function startMission() {
@@ -367,6 +374,109 @@ function fieldGrowthTick() {
 }
 
 // ============================================================
+// МАРШРУТЫ
+// ============================================================
+function routesTick() {
+    if (state.gameOver) return;
+    if (!state.routes.length) return;
+
+    const now = Date.now();
+    let needMapRender = false;
+    let needCityRender = false;
+
+    state.routes.forEach(route => {
+        if (route.status !== 'active') return;
+
+        // Ожидание между партиями
+        if (now < route.nextDepartAt) return;
+
+        // Готовим партию
+        if (route.currentTrip === null) {
+            const source = state.locations.find(l => l.index === route.fromIdx);
+            if (!source || !source.forestData) { route.status = 'cancelled'; return; }
+
+            const available = getForestWoodTotal(source);
+            if (available <= 0 && route.delivered < route.amountTotal) {
+                // Пауза: источник пуст
+                route.status = 'paused';
+                return;
+            }
+
+            const remaining = route.amountTotal - route.delivered;
+            const tripAmount = Math.min(available, remaining, CONFIG.route.maxPerTrip);
+            if (tripAmount <= 0) { route.status = 'cancelled'; return; }
+
+            // Списываем с источника
+            spendForestWood(source, tripAmount);
+            route.currentTrip = {
+                amount: tripAmount,
+                departAt: now,
+                arriveAt: now + route.stepMs
+            };
+            needMapRender = true;
+        }
+
+        // Прибытие
+        if (route.currentTrip && now >= route.currentTrip.arriveAt) {
+            route.delivered += route.currentTrip.amount;
+            const target = state.locations.find(l => l.index === route.toIdx);
+            if (target && target.id === 'city') {
+                target.stockadeCollectedWood =
+                    Math.min(CONFIG.city.stockadeCostWood,
+                        (target.stockadeCollectedWood || 0) + route.currentTrip.amount);
+                needCityRender = true;
+            }
+            route.currentTrip = null;
+
+            if (route.delivered >= route.amountTotal) {
+                route.status = 'done';
+                notify('Маршрут завершён: древесина доставлена', 'success');
+            } else {
+                route.nextDepartAt = now + CONFIG.route.stepDelayMs;
+            }
+            needMapRender = true;
+        }
+    });
+
+    // Убираем завершённые
+    state.routes = state.routes.filter(r => r.status === 'active' || r.status === 'paused');
+
+    if (needMapRender) renderMap();
+    if (needCityRender && state.currentCityLoc) renderCityScreen(state.currentCityLoc);
+}
+
+function createRoute(fromLoc, toLoc, amountTotal) {
+    const steps = Math.abs(fromLoc.col - toLoc.col) + Math.abs(fromLoc.row - toLoc.row);
+    const stepMs = Math.max(1, steps) * CONFIG.route.secPerStep * 1000;
+
+    state.routes.push({
+        id: 'route_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        fromIdx: fromLoc.index,
+        toIdx: toLoc.index,
+        amountTotal,
+        delivered: 0,
+        status: 'active',
+        stepMs,
+        currentTrip: null,
+        nextDepartAt: Date.now()
+    });
+    renderMap();
+}
+
+function getRouteSourceOptions() {
+    // Все локации игрока, где есть древесина на складах
+    return state.locations.filter(loc =>
+        loc.owner === 'player' &&
+        loc.forestData &&
+        getForestWoodTotal(loc) > 0
+    );
+}
+
+function getActiveRouteFromIdx(idx) {
+    return state.routes.find(r => r.fromIdx === idx && (r.status === 'active' || r.status === 'paused'));
+}
+
+// ============================================================
 // HUD
 // ============================================================
 function renderResources() {
@@ -434,9 +544,19 @@ function renderMap() {
         } else if (loc.scouted) statusText = 'разведано';
         else if (!isAdj) statusText = 'далеко';
 
+        // Бейдж: стройка частокола или активный маршрут
         let badge = '';
-        if (loc.id === 'city' && loc.activeConstruction === 'stockade') {
-            badge = `<div class="loc-construction-badge">🪵 Древесина: ${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood}</div>`;
+        if (loc.id === 'city' && (loc.activeConstruction === 'stockade' || loc.stockadeBuilt)) {
+            const activeRoute = state.routes.find(r => r.toIdx === loc.index && r.status === 'active');
+            const routeInfo = activeRoute
+                ? ` · 🚚 ${activeRoute.delivered}/${activeRoute.amountTotal}`
+                : '';
+            badge = `<div class="loc-construction-badge">🪵 ${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood}${routeInfo}</div>`;
+        } else {
+            const activeRoute = state.routes.find(r => r.fromIdx === loc.index && r.status === 'active');
+            if (activeRoute) {
+                badge = `<div class="loc-construction-badge">🚚 ${activeRoute.delivered}/${activeRoute.amountTotal}</div>`;
+            }
         }
 
         div.innerHTML = `
@@ -538,7 +658,6 @@ function getWoodTotal() {
     return total;
 }
 
-// Универсальная трата древесины: сначала стартовая, потом склады (с самых полных)
 function spendGlobalWood(amount) {
     if (getWoodTotal() < amount) return false;
     let need = amount;
@@ -568,7 +687,6 @@ function spendGlobalWood(amount) {
     return need === 0;
 }
 
-// Трата древесины внутри конкретной локации (с её складов, с самых полных)
 function spendForestWood(loc, amount) {
     if (!loc || !loc.forestData) return false;
     let need = amount;
@@ -661,6 +779,8 @@ function forestDescription(loc) {
         }
     });
     if (!builtAny) s += 'Склады отсутствуют.';
+    const activeRoute = getActiveRouteFromIdx(loc.index);
+    if (activeRoute) s += `\n🚚 Активный маршрут: ${activeRoute.delivered}/${activeRoute.amountTotal}`;
     return s;
 }
 
@@ -675,7 +795,7 @@ function fieldDescription(loc) {
         }
     });
     if (!builtAny) s += 'Амбары отсутствуют.';
-    s += `\nСемена ржи: ${loc.fieldData.seeds.rye}.`;
+    s += `\nСемена ржи (общие): ${state.seeds.rye}.`;
     return s;
 }
 
@@ -811,6 +931,8 @@ function openTaskDialog(loc) {
 function onStockadeClick(loc) {
     if (!loc.baseBuilt) { notify('Сначала постройте базу', 'warn'); return; }
     if (loc.stockadeBuilt) { notify('Частокол уже построен', 'success'); return; }
+
+    // Если стройка ещё не активна — активируем
     if (loc.activeConstruction !== 'stockade') {
         loc.activeConstruction = 'stockade';
         notify('Начата стройка: Частокол (150 🪵)', 'warn');
@@ -818,12 +940,72 @@ function onStockadeClick(loc) {
         renderMap();
         return;
     }
+
+    // Стройка активна — открываем панель действий
+    openStockadeActionPanel(loc);
+}
+
+function openStockadeActionPanel(loc) {
+    const btns = document.getElementById('action-buttons');
+    const title = document.getElementById('action-title');
+    const desc = document.getElementById('action-desc');
+    btns.innerHTML = '';
+
+    title.textContent = 'Стройка: Частокол';
+
     const have = loc.stockadeCollectedWood;
-    if (have >= CONFIG.city.stockadeCostWood) completeStockade(loc);
-    else notify(`Нужно ещё ${CONFIG.city.stockadeCostWood - have} 🪵. Доставьте по маршруту.`, 'warn');
+    const need = CONFIG.city.stockadeCostWood;
+    let descText =
+        `Собрано: ${have} / ${need} 🪵.\n` +
+        `Требуется ещё: ${Math.max(0, need - have)} 🪵.`;
+
+    const activeRouteToCity = state.routes.find(r => r.toIdx === loc.index && (r.status === 'active' || r.status === 'paused'));
+    if (activeRouteToCity) {
+        descText += `\n🚚 Активный маршрут: ${activeRouteToCity.delivered}/${activeRouteToCity.amountTotal}`;
+    }
+    desc.textContent = descText;
+
+    // Кнопка завершения (если набрали)
+    if (have >= need) {
+        addBtn(btns, '🏗️ Построить частокол', () => completeStockade(loc), true);
+    } else {
+        // Выбор источника для маршрута
+        const sources = getRouteSourceOptions();
+        if (!sources.length) {
+            addBtn(btns, '🚚 Нет источников с древесиной', () => {}, false);
+        } else {
+            sources.forEach(src => {
+                const activeRoute = getActiveRouteFromIdx(src.index);
+                if (activeRoute) {
+                    addBtn(btns,
+                        `🚚 ${src.name}: уже в пути (${activeRoute.delivered}/${activeRoute.amountTotal})`,
+                        () => {}, false);
+                } else {
+                    const woodInSource = getForestWoodTotal(src);
+                    const canSend = woodInSource > 0;
+                    const remainingNeed = need - have;
+                    const defaultAmount = Math.min(woodInSource, remainingNeed, CONFIG.route.maxPerTrip);
+                    addBtn(btns,
+                        `🚚 Из «${src.name}» (${defaultAmount} 🪵)`,
+                        () => {
+                            const amount = Math.min(woodInSource, remainingNeed);
+                            createRoute(src, loc, amount);
+                            notify(`Маршрут отправлен: ${amount} 🪵 из «${src.name}»`, 'success');
+                            closeActionPanel();
+                            renderMap();
+                            renderCityScreen(loc);
+                        },
+                        canSend);
+                }
+            });
+        }
+    }
+
+    document.getElementById('action-panel').classList.add('open');
 }
 
 function completeStockade(loc) {
+    if (loc.stockadeCollectedWood < CONFIG.city.stockadeCostWood) return;
     loc.stockadeBuilt = true;
     loc.activeConstruction = null;
     state.tasks.buildStockade = true;
@@ -1086,11 +1268,11 @@ function renderFieldScreen(loc) {
         grid.appendChild(div);
     });
 
-    // Окно «Семена»
+    // Окно «Семена» — ОБЩИЕ семена из state.seeds
     const seedsList = document.getElementById('seeds-list');
     seedsList.innerHTML = '';
     Object.values(PLANTS).forEach(plant => {
-        const count = loc.fieldData.seeds[plant.id] || 0;
+        const count = state.seeds[plant.id] || 0;
         const item = document.createElement('div');
         item.className = 'seed-item';
         if (state.selectedSeedType === plant.id) item.classList.add('selected');
@@ -1150,14 +1332,14 @@ function onFieldTileClick(sq) {
 
 function plantOnSquare(loc, sq) {
     const plantId = state.selectedSeedType;
-    const seeds = loc.fieldData.seeds[plantId] || 0;
+    const seeds = state.seeds[plantId] || 0;
     const cost = CONFIG.field.seedsPerSquare;
 
     if (seeds < cost) {
         notify(`Недостаточно семян ${PLANTS[plantId].name} (нужно ${cost}, есть ${seeds})`, 'warn');
         return;
     }
-    loc.fieldData.seeds[plantId] -= cost;
+    state.seeds[plantId] -= cost;
     sq.planted = plantId;
     sq.plantedAt = Date.now();
     sq.ready = false;
@@ -1228,6 +1410,36 @@ function refreshFieldActionPanel(loc) {
         }
         if (b.plantType !== 'none') {
             addBtn(btns, '🗑️ Сбросить (Пусто)', () => changeBarnPlant(b, 'none'), true);
+        }
+
+        // === Семена: перевод из амбара в «карман» и обратно ===
+        if (b.plantType === 'rye' && b.amount > 0) {
+            const step = Math.min(CONFIG.field.seedsPerSquare, b.amount);
+            addBtn(btns, `🌱 Взять ${step} семян из амбара`,
+                () => {
+                    const take = Math.min(CONFIG.field.seedsPerSquare, b.amount);
+                    b.amount -= take;
+                    state.seeds.rye += take;
+                    renderFieldScreen(loc);
+                    onBarnClick(b);
+                    renderResources();
+                }, true);
+        }
+        if (b.plantType === 'rye') {
+            const freeSpace = CONFIG.field.barnCapacity - b.amount;
+            const back = Math.min(CONFIG.field.seedsPerSquare, state.seeds.rye, freeSpace);
+            if (back > 0) {
+                addBtn(btns, `↩️ Вернуть ${back} семян в амбар`,
+                    () => {
+                        const put = Math.min(CONFIG.field.seedsPerSquare, state.seeds.rye,
+                            CONFIG.field.barnCapacity - b.amount);
+                        state.seeds.rye -= put;
+                        b.amount += put;
+                        renderFieldScreen(loc);
+                        onBarnClick(b);
+                        renderResources();
+                    }, true);
+            }
         }
     }
     document.getElementById('action-panel').classList.add('open');
@@ -1365,7 +1577,6 @@ function endGame(isVictory, message) {
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-start').addEventListener('click', startMission);
-
     document.getElementById('btn-back-to-map').addEventListener('click', backToGlobalMap);
 
     document.getElementById('btn-city-back').addEventListener('click', () => {

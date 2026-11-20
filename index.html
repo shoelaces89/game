@@ -62,9 +62,15 @@
         </div>
     </div>
 
-    <!-- 1.3 Карта миссии -->
-    <div id="map-container">
-        <canvas id="map-canvas"></canvas>
+    <!-- Текущая задача (как в старой демке) -->
+    <div id="task-banner">
+        <span id="ui-current-task">📜 Этап 1: Построить частокол (150 🪵) и собрать урожай</span>
+    </div>
+
+    <!-- Сеточная карта миссии (4x5 из старой версии) -->
+    <div id="map-viewport">
+        <div id="map-grid"></div>
+        <svg id="route-overlay"></svg>
         <div id="toast-container"></div>
     </div>
 

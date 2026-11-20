@@ -17,15 +17,15 @@
  */
 
 /**
- * @typedef {Object} GameNode
+ * @typedef {Object} MapLocation
+ * @property {number} index
+ * @property {number} col
+ * @property {number} row
  * @property {string} id
  * @property {string} name
- * @property {string} type
- * @property {string} status
- * @property {number} circle
- * @property {number} x
- * @property {number} y
- * @property {boolean} visible
+ * @property {string} icon
+ * @property {string} owner
+ * @property {boolean} scouted
  * @property {Object.<string, number>} storage
  * @property {string[]} buildings
  * @property {ConstructionItem} [construction]
@@ -35,12 +35,15 @@
 /**
  * @typedef {Object} RouteItem
  * @property {number} id
- * @property {string} from
- * @property {string} to
+ * @property {number} fromIdx
+ * @property {number} toIdx
  * @property {string} resource
- * @property {number} duration
- * @property {number} progress
+ * @property {number} amountTotal
+ * @property {number} delivered
+ * @property {number} stepMs
+ * @property {number} progressMs
  * @property {number} inTransit
+ * @property {string} status
  */
 
 /**
@@ -65,13 +68,19 @@
  * @property {number} paternalism
  * @property {number} passionarity
  * @property {Object.<string, number>} army
- * @property {GameNode[]} nodes
- * @property {Array.<[string, string]>} edges
+ * @property {MapLocation[]} locations
  */
 
 // ============================================================================
-// КОНФИГУРАЦИЯ И ЭТАПЫ (Разделы 2, 3, 11)
+// КОНФИГУРАЦИЯ (ТЗ v2.1 + параметры карты из старой демки)
 // ============================================================================
+const CONFIG = {
+    map: { cols: 4, rows: 5 },
+    startingResources: { wood: 10, provant: 20, peasants: 5, vityazi: 1 },
+    route: { maxPerTrip: 25, secPerStep: 5 },
+    stockadeCostWood: 150
+};
+
 const MISSION_STAGES = [
     { id: 1, name: "Село", timer: 600 },
     { id: 2, name: "Разведка" },
@@ -81,134 +90,142 @@ const MISSION_STAGES = [
     { id: 6, name: "Отражение набега" }
 ];
 
-/** @type {GameNode[]} */
-const INITIAL_NODES = [
-    {
-        id: "village_1",
-        name: "Село Родное",
-        type: "village",
-        status: "owned",
-        circle: 0,
-        x: 0,
-        y: 0,
-        visible: true,
-        storage: { wood: 10, rye: 0 },
-        buildings: [
-            "Лесопилка", "Смолокурня", "Угольная яма", "Плотницкая",
-            "Кожевня", "Мельница", "Маслобойня", "Коптильня", "Медоварня", "Пекарня"
-        ],
-        construction: {
-            id: "palisade",
-            name: "Частокол",
-            reqRes: "wood",
-            reqAmount: 150,
-            currentAmount: 0,
-            active: false,
-            done: false
-        }
-    },
-    {
-        id: "forest_1",
-        name: "Бор",
-        type: "res_forest",
-        status: "free",
-        circle: 1,
-        x: -130,
-        y: -80,
-        visible: false,
-        storage: { wood: 80 },
-        buildings: []
-    },
-    {
-        id: "field_1",
-        name: "Нива",
-        type: "res_field",
-        status: "free",
-        circle: 1,
-        x: 130,
-        y: -70,
-        visible: false,
-        storage: { rye: 0 },
-        barn: { current: 0, max: 100, done: false },
-        buildings: []
-    },
-    {
-        id: "river_1",
-        name: "Река Стугна",
-        type: "res_river",
-        status: "free",
-        circle: 2,
-        x: 0,
-        y: -170,
-        visible: false,
-        storage: {},
-        buildings: []
-    },
-    {
-        id: "pasture_1",
-        name: "Заливные луга",
-        type: "res_pasture",
-        status: "free",
-        circle: 2,
-        x: -170,
-        y: 70,
-        visible: false,
-        storage: {},
-        buildings: []
-    },
-    {
-        id: "mines_1",
-        name: "Рудные недра",
-        type: "res_mines",
-        status: "free",
-        circle: 2,
-        x: 170,
-        y: 80,
-        visible: false,
-        storage: {},
-        buildings: []
-    },
-    {
-        id: "city_1",
-        name: "Град Чернигов",
-        type: "city",
-        status: "neutral",
-        circle: 3,
-        x: 0,
-        y: 180,
-        visible: false,
-        storage: {},
-        buildings: [
-            "Гончарная", "Кузня", "Оружейная мастерская",
-            "Мастерская бронника", "Верфь", "Рынок", "Княжий терем"
-        ]
-    },
-    {
-        id: "bandits_1",
-        name: "Лагерь разбойников",
-        type: "bandits",
-        status: "hostile",
-        circle: 3,
-        x: 150,
-        y: 210,
-        visible: false,
-        storage: {},
-        buildings: []
+/**
+ * @param {string} typeId
+ * @returns {{name: string, icon: string, owner: string, buildings: string[]}}
+ */
+function LOCATION_DEF(typeId) {
+    switch (typeId) {
+        case "village":
+            return {
+                name: "Село",
+                icon: "🏘️",
+                owner: "none",
+                buildings: [
+                    "Лесопилка", "Смолокурня", "Угольная яма", "Плотницкая",
+                    "Кожевня", "Мельница", "Маслобойня", "Коптильня", "Медоварня", "Пекарня"
+                ]
+            };
+        case "city":
+            return {
+                name: "Город",
+                icon: "🏰",
+                owner: "neutral",
+                buildings: [
+                    "Гончарная", "Кузня", "Оружейная мастерская",
+                    "Мастерская бронника", "Верфь", "Рынок", "Княжий терем"
+                ]
+            };
+        case "bandits":
+            return { name: "Лагерь бандитов", icon: "⛺", owner: "hostile", buildings: [] };
+        case "forest":
+            return { name: "Лес", icon: "🌲", owner: "none", buildings: [] };
+        case "field":
+            return { name: "Поле", icon: "🌾", owner: "none", buildings: [] };
+        case "river":
+            return { name: "Река", icon: "🌊", owner: "none", buildings: [] };
+        case "pasture":
+            return { name: "Пастбища", icon: "🐄", owner: "none", buildings: [] };
+        case "mines":
+            return { name: "Недра", icon: "⛰️", owner: "none", buildings: [] };
+        default:
+            return { name: "Пустошь", icon: "⬜", owner: "none", buildings: [] };
     }
-];
+}
 
-/** @type {Array.<[string, string]>} */
-const INITIAL_EDGES = [
-    ["village_1", "forest_1"],
-    ["village_1", "field_1"],
-    ["village_1", "pasture_1"],
-    ["forest_1", "river_1"],
-    ["field_1", "river_1"],
-    ["field_1", "mines_1"],
-    ["pasture_1", "city_1"],
-    ["mines_1", "city_1"],
-    ["city_1", "bandits_1"]
-];
+// ============================================================================
+// ГЕНЕРАЦИЯ СЕТОЧНОЙ КАРТЫ 4x5 (как в старой демке, под правила ТЗ v2.1)
+// ============================================================================
+
+/**
+ * @returns {MapLocation[]}
+ */
+function generateMap() {
+    const cols = CONFIG.map.cols;
+    const rows = CONFIG.map.rows;
+    const total = cols * rows;
+    /** @type {MapLocation[]} */
+    const locs = [];
+
+    // Стартовое село в левом нижнем углу (как стартовая клетка в старой демке)
+    const startIdx = (rows - 1) * cols; // index 16 (row 4, col 0)
+    const fieldIdx = startIdx - cols;   // index 12 (row 3, col 0) — сосед сверху
+    const forestIdx = startIdx + 1;     // index 17 (row 4, col 1) — сосед справа
+
+    /** @type {Array.<string|null>} */
+    const types = new Array(total).fill(null);
+    types.splice(startIdx, 1, "village");
+    types.splice(fieldIdx, 1, "field");
+    types.splice(forestIdx, 1, "forest");
+
+    // Обязательные узлы миссии в глубине карты (3-4 круги от старта)
+    const cityIdx = 2;     // row 0, col 2
+    const banditsIdx = 3;  // row 0, col 3 (рядом с городом)
+    const riverIdx = 9;    // row 2, col 1
+    const pastureIdx = 14; // row 3, col 2
+    const minesIdx = 11;   // row 2, col 3
+
+    types.splice(cityIdx, 1, "city");
+    types.splice(banditsIdx, 1, "bandits");
+    types.splice(riverIdx, 1, "river");
+    types.splice(pastureIdx, 1, "pasture");
+    types.splice(minesIdx, 1, "mines");
+
+    const pool = ["forest", "field", "river", "pasture", "mines", "empty", "empty"];
+    for (let i = 0; i < total; i++) {
+        if (types.at(i) !== null) continue;
+        const rnd = pool.at(Math.floor(Math.random() * pool.length)) || "empty";
+        types.splice(i, 1, rnd);
+    }
+
+    for (let i = 0; i < total; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const typeId = types.at(i) || "empty";
+        const def = LOCATION_DEF(typeId);
+        const isStart = i === startIdx;
+
+        /** @type {MapLocation} */
+        const loc = {
+            index: i,
+            col: col,
+            row: row,
+            id: typeId,
+            name: isStart ? "Село Родное" : def.name,
+            icon: def.icon,
+            owner: isStart ? "player" : def.owner,
+            scouted: isStart,
+            storage: isStart ? { wood: CONFIG.startingResources.wood } : {},
+            buildings: def.buildings
+        };
+
+        if (isStart) {
+            loc.construction = {
+                id: "palisade",
+                name: "Частокол",
+                reqRes: "wood",
+                reqAmount: CONFIG.stockadeCostWood,
+                currentAmount: 0,
+                active: false,
+                done: false
+            };
+        }
+
+        if (typeId === "forest") {
+            // Временный запас древесины до подключения детального экрана Леса
+            loc.storage = { wood: 160 };
+        }
+
+        if (typeId === "field") {
+            loc.storage = { rye: 0 };
+            loc.barn = { current: 0, max: 100, done: false };
+        }
+
+        locs.push(loc);
+    }
+
+    return locs;
+}
 
 // ============================================================================
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ (Раздел 11.1)
@@ -229,16 +246,15 @@ function createInitialState() {
         routes: [],
         mission_timer: 600.0,
         tasks: {
-            palisade: { title: "Построить частокол в селе (150 древесины)", done: false, stage: 1 },
+            palisade: { title: "Построить частокол (150 древесины)", done: false, stage: 1 },
             harvest: { title: "Собрать урожай (заполнить амбар в поле)", done: false, stage: 1 },
-            find_city: { title: "Разведать земли и найти город", done: false, stage: 2 },
+            find_city: { title: "Разведать территорию и найти город", done: false, stage: 2 },
             defeat_bandits: { title: "Победить бандитов и присоединить город", done: false, stage: 3 }
         },
         paternalism: 50,
         passionarity: 50,
         army: { vityazi: 1 },
-        nodes: JSON.parse(JSON.stringify(INITIAL_NODES)),
-        edges: JSON.parse(JSON.stringify(INITIAL_EDGES))
+        locations: generateMap()
     };
 }
 
@@ -246,7 +262,7 @@ function createInitialState() {
 let state = createInitialState();
 
 // ============================================================================
-// УТИЛИТЫ И УВЕДОМЛЕНИЯ (Разделы 5, 6, 10.4)
+// УТИЛИТЫ И ПРАВИЛА МИРА (Разделы 4, 5, 6, 7, 10.4)
 // ============================================================================
 
 /**
@@ -295,82 +311,90 @@ function spendProvant(amount) {
  * @returns {number}
  */
 function getTotalWood() {
-    return state.nodes.reduce(function (sum, n) {
-        return sum + (n.storage.wood || 0);
+    return state.locations.reduce(function (sum, loc) {
+        return sum + (loc.storage.wood || 0);
     }, 0);
 }
 
 /**
- * @param {string} idA
- * @param {string} idB
+ * Манхэттенское расстояние (круги от стартового села — 4.1)
+ * @param {MapLocation} loc
  * @returns {number}
  */
-function getGraphDistance(idA, idB) {
-    if (idA === idB) return 0;
-    /** @type {Array.<[string, number]>} */
-    const queue = [[idA, 0]];
-    const visited = new Set([idA]);
-
-    while (queue.length > 0) {
-        const item = queue.shift();
-        if (!item) break;
-        const [curr, dist] = item;
-
-        for (const [u, v] of state.edges) {
-            const next = u === curr ? v : (v === curr ? u : null);
-            if (next && !visited.has(next)) {
-                if (next === idB) return dist + 1;
-                visited.add(next);
-                queue.push([next, dist + 1]);
-            }
-        }
-    }
-    return 1;
+function getRingFromStart(loc) {
+    const startCol = 0;
+    const startRow = CONFIG.map.rows - 1;
+    return Math.abs(loc.col - startCol) + Math.abs(loc.row - startRow);
 }
 
+/**
+ * Стоимость разведки (4.1: по кругам, но река всегда 2 провианта)
+ * @param {MapLocation} loc
+ * @returns {number}
+ */
+function getScoutCost(loc) {
+    if (loc.id === "river") return 2;
+    return Math.max(1, getRingFromStart(loc));
+}
+
+/**
+ * Проверка соседства по кресту (как в старой демке isAdjacentToPlayer)
+ * @param {MapLocation} loc
+ * @returns {boolean}
+ */
+function isAdjacentToVisible(loc) {
+    const cols = CONFIG.map.cols;
+    const rows = CONFIG.map.rows;
+    /** @type {number[]} */
+    const neighbors = [];
+    if (loc.col > 0) neighbors.push(loc.index - 1);
+    if (loc.col < cols - 1) neighbors.push(loc.index + 1);
+    if (loc.row > 0) neighbors.push(loc.index - cols);
+    if (loc.row < rows - 1) neighbors.push(loc.index + cols);
+    return neighbors.some(function (nIdx) {
+        const n = state.locations.at(nIdx);
+        return Boolean(n && (n.owner === "player" || n.scouted));
+    });
+}
 // ============================================================================
-// ЛОГИКА ИГРЫ И ЭТАПОВ
+// ЛОГИКА ИГРЫ, МАРШРУТОВ И ЭТАПОВ
 // ============================================================================
 const Game = {
     running: false,
     lastTick: 0,
-
     startMission() {
         state = createInitialState();
         const menuScreen = document.getElementById("menu-screen");
         const gameScreen = document.getElementById("game-screen");
         if (menuScreen) menuScreen.classList.remove("active");
         if (gameScreen) gameScreen.classList.add("active");
-
-        MapEngine.init();
+        Gestures.init();
         this.running = true;
         this.lastTick = performance.now();
         notify("Вы получили стартовый запас: 20 провианта, 10 древесины, 5 крестьян, 1 юнит витязей");
-        UI.updateTopBar();
+        UI.renderAll();
         const self = this;
         requestAnimationFrame(function (now) { self.loop(now); });
     },
-
     /**
-     * @param {number} now
+     • @param {number} now
      */
     loop(now) {
         if (!this.running) return;
         const dt = (now - this.lastTick) / 1000;
         this.lastTick = now;
-
         this.updateTimers(dt);
-        this.updateRoutes(dt);
+        const routesChanged = this.updateRoutes(dt);
         this.checkStageProgression();
-
         UI.updateTopBar();
-        MapEngine.render();
+        if (routesChanged) {
+            UI.renderMap();
+        }
         const self = this;
         requestAnimationFrame(function (t) { self.loop(t); });
     },
-
     /**
-     * @param {number} dt
+     • @param {number} dt
      */
     updateTimers(dt) {
         const stageObj = MISSION_STAGES.find(function (s) { return s.id === state.current_stage; });
@@ -386,26 +410,31 @@ const Game = {
             }
         }
     },
-
     /**
-     * @param {number} dt
+     • 7.2 Работа логистических маршрутов
+     • @param {number} dt
+     • @returns {boolean}
      */
     updateRoutes(dt) {
+        let changed = false;
         for (let i = state.routes.length - 1; i >= 0; i--) {
             const r = state.routes.at(i);
             if (!r) continue;
-            const src = state.nodes.find(function (n) { return n.id === r.from; });
-            const dst = state.nodes.find(function (n) { return n.id === r.to; });
+            const src = state.locations.at(r.fromIdx);
+            const dst = state.locations.at(r.toIdx);
             if (!src || !dst || !dst.construction || dst.construction.done) {
                 state.routes.splice(i, 1);
+                changed = true;
                 continue;
             }
             if (r.inTransit > 0) {
-                r.progress += dt;
-                if (r.progress >= r.duration) {
+                r.progressMs += dt * 1000;
+                if (r.progressMs >= r.stepMs) {
                     dst.construction.currentAmount += r.inTransit;
+                    r.delivered += r.inTransit;
                     r.inTransit = 0;
-                    r.progress = 0;
+                    r.progressMs = 0;
+                    changed = true;
                     if (dst.construction.currentAmount >= dst.construction.reqAmount) {
                         dst.construction.currentAmount = dst.construction.reqAmount;
                         dst.construction.done = true;
@@ -422,102 +451,131 @@ const Game = {
                 const needed = dst.construction.reqAmount - dst.construction.currentAmount;
                 const available = src.storage[r.resource] || 0;
                 if (available > 0 && needed > 0) {
-                    const batch = Math.min(25, available, needed);
+                    const batch = Math.min(CONFIG.route.maxPerTrip, available, needed);
                     src.storage[r.resource] -= batch;
                     r.inTransit = batch;
-                    r.progress = 0;
+                    r.progressMs = 0;
+                    r.status = "active";
+                    changed = true;
+                } else if (needed > 0 && r.status !== "paused") {
+                    r.status = "paused";
+                    changed = true;
                 }
             }
         }
+        return changed;
     },
     checkStageProgression() {
         if (state.current_stage === 1 && state.tasks.palisade.done && state.tasks.harvest.done) {
             state.current_stage = 2;
             state.mission_timer = 0;
             notify("Этап 2: Разведка и поиск города");
+            UI.updateTaskBanner();
         }
-        const city = state.nodes.find(function (n) { return n.id === "city_1"; });
-        if (state.current_stage === 2 && city && city.visible) {
+        const city = state.locations.find(function (l) { return l.id === "city"; });
+        if (state.current_stage === 2 && city && city.scouted) {
             state.tasks.find_city.done = true;
             state.current_stage = 3;
             notify("Задание выполнено! Этап 3: Присоединение города");
+            UI.updateTaskBanner();
         }
     },
     /**
-     • @param {string} nodeId
+     • 4.1 Разведка
+     • @param {number} locIdx
      */
-    scoutNode(nodeId) {
-        const node = state.nodes.find(function (n) { return n.id === nodeId; });
-        if (!node || node.visible) return;
-        const cost = node.type === "res_river" ? 2 : node.circle;
+    scoutLocation(locIdx) {
+        const loc = state.locations.at(locIdx);
+        if (!loc || loc.scouted) return;
+        const cost = getScoutCost(loc);
         if (!spendProvant(cost)) {
             notify("Недостаточно провианта (нужно " + cost + ")");
             return;
         }
-        node.visible = true;
-        notify("Открыта локация: " + node.name);
-        UI.openNodeModal(node);
+        loc.scouted = true;
+        notify("Разведано: " + loc.name);
+        UI.renderMap();
+        UI.openLocationModal(loc);
     },
     /**
-     • @param {string} nodeId
+     • 4.2 Присоединение / Захват
+     • @param {number} locIdx
      */
-    claimNode(nodeId) {
-        const node = state.nodes.find(function (n) { return n.id === nodeId; });
-        if (!node || !node.visible) return;
-        if (node.status === "free") {
-            node.status = "owned";
-            notify("Локация «" + node.name + "» занята");
-            UI.openNodeModal(node);
-        } else if (node.type === "bandits" && node.status === "hostile") {
+    claimLocation(locIdx) {
+        const loc = state.locations.at(locIdx);
+        if (!loc || !loc.scouted) return;
+        if (loc.owner === "none") {
+            loc.owner = "player";
+            notify("Локация «" + loc.name + "» занята");
+            UI.renderMap();
+            UI.openLocationModal(loc);
+        } else if (loc.id === "bandits" && loc.owner === "hostile") {
             if ((state.army.vityazi || 0) >= 1) {
-                node.status = "owned";
-                const city = state.nodes.find(function (n) { return n.id === "city_1"; });
-                if (city) city.status = "owned";
+                loc.owner = "player";
+                const city = state.locations.find(function (l) { return l.id === "city"; });
+                if (city) city.owner = "player";
                 state.workers.free += 15;
                 state.workers.total += 15;
                 state.tasks.defeat_bandits.done = true;
                 state.current_stage = 4;
                 notify("Задание выполнено! Бандиты разбиты, город присоединился (+15 крестьян)");
-                UI.openNodeModal(node);
+                UI.renderAll();
+                UI.openLocationModal(loc);
             } else {
                 notify("Нет войск для атаки!");
             }
         }
     },
     /**
-     • @param {string} fromId
-     • @param {string} toId
+     • 7.1 Создание маршрута (5 сек × количество шагов по сетке)
+     • @param {number} fromIdx
+     • @param {number} toIdx
      • @param {string} resource
      */
-    createRoute(fromId, toId, resource) {
-        const dist = getGraphDistance(fromId, toId);
-        const duration = 5 * dist;
+    createRoute(fromIdx, toIdx, resource) {
+        const src = state.locations.at(fromIdx);
+        const dst = state.locations.at(toIdx);
+        if (!src || !dst || !dst.construction) return;
+        const steps = Math.max(1, Math.abs(src.col - dst.col) + Math.abs(src.row - dst.row));
+        const stepMs = steps * CONFIG.route.secPerStep * 1000;
+        const needed = dst.construction.reqAmount - dst.construction.currentAmount;
         state.routes.push({
-            id: Date.now(),
-            from: fromId,
-            to: toId,
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            fromIdx: fromIdx,
+            toIdx: toIdx,
             resource: resource,
-            duration: duration,
-            progress: 0,
-            inTransit: 0
+            amountTotal: needed,
+            delivered: 0,
+            stepMs: stepMs,
+            progressMs: 0,
+            inTransit: 0,
+            status: "active"
         });
-        notify("Маршрут создан (время рейса: " + duration + " сек.)");
+        notify("Маршрут создан (рейс: " + (steps * CONFIG.route.secPerStep) + " сек.)");
+        UI.renderMap();
     },
     /**
+     • 7.3 Отмена маршрута
      • @param {number} routeId
      */
     cancelRoute(routeId) {
         const idx = state.routes.findIndex(function (r) { return r.id === routeId; });
         if (idx !== -1) {
             state.routes.splice(idx, 1);
-            notify("Маршрут отменён (груз в пути утерян)");
+            notify("Маршрут отменён (ресурс в пути пропал)");
+            UI.renderMap();
         }
     }
 };
 // ============================================================================
-// ИНТЕРФЕЙС И МОДАЛЬНЫЕ ОКНА (Раздел 10 — чистый DOM без HTML-строк)
+// ИНТЕРФЕЙС И ОТРИСОВКА КАРТЫ (Разделы 1.3, 10)
 // ============================================================================
 const UI = {
+    renderAll() {
+        this.updateTopBar();
+        this.updateTaskBanner();
+        this.renderMap();
+    },
     updateTopBar() {
         const elProvant = document.getElementById("ui-provant");
         const elWood = document.getElementById("ui-wood");
@@ -538,6 +596,109 @@ const UI = {
                 elTimer.textContent = "—";
             }
         }
+    },
+    updateTaskBanner() {
+        const el = document.getElementById("ui-current-task");
+        if (!el) return;
+        const keys = Object.keys(state.tasks);
+        for (const k of keys) {
+            const t = state.tasks[k];
+            if (!t.done) {
+                el.textContent = "📜 " + t.title;
+                return;
+            }
+        }
+        el.textContent = "✅ Все текущие задачи выполнены";
+    },
+    /**
+     • Отрисовка сеточной карты 4x5 (как в старой демке)
+     */
+    renderMap() {
+        const grid = document.getElementById("map-grid");
+        if (!grid) return;
+        grid.textContent = "";
+        state.locations.forEach(function (loc) {
+            const div = document.createElement("div");
+            div.className = "loc";
+            div.dataset.locIndex = String(loc.index);
+            const isAdj = isAdjacentToVisible(loc);
+            const showInfo = loc.scouted || loc.owner === "player";
+            if (!showInfo) div.classList.add("fog");
+            if (loc.owner === "player") div.classList.add("player");
+            if (loc.owner === "hostile") div.classList.add("hostile");
+            if (loc.owner === "neutral") div.classList.add("neutral");
+            if (!showInfo && !isAdj) div.classList.add("locked");
+            if (loc.construction && loc.construction.active) div.classList.add("construction-target");
+// Бейджи стройки и маршрутов на клетке (из старой демки)
+            if (loc.construction && (loc.construction.active || loc.construction.done)) {
+                const badge = document.createElement("div");
+                badge.className = "loc-construction-badge";
+                const routeTo = state.routes.find(function (r) { return r.toIdx === loc.index; });
+                const routeStr = routeTo ? " · 🚚 " + routeTo.delivered + "/" + routeTo.amountTotal : "";
+                badge.textContent = "🪵 " + loc.construction.currentAmount + "/" + loc.construction.reqAmount + routeStr;
+                div.appendChild(badge);
+            } else {
+                const routeFrom = state.routes.find(function (r) { return r.fromIdx === loc.index; });
+                if (routeFrom) {
+                    const badge = document.createElement("div");
+                    badge.className = "loc-construction-badge";
+                    badge.textContent = "🚚 " + routeFrom.delivered + "/" + routeFrom.amountTotal;
+                    div.appendChild(badge);
+                }
+            }
+            const iconEl = document.createElement("div");
+            iconEl.className = "loc-icon";
+            iconEl.textContent = showInfo ? loc.icon : "❓";
+            div.appendChild(iconEl);
+            const nameEl = document.createElement("div");
+            nameEl.className = "loc-name";
+            nameEl.textContent = showInfo ? loc.name : "???";
+            div.appendChild(nameEl);
+            const statusEl = document.createElement("div");
+            statusEl.className = "loc-status";
+            if (loc.owner === "player") {
+                statusEl.textContent = "под контролем";
+            } else if (loc.owner === "neutral") {
+                statusEl.textContent = "нейтрально";
+            } else if (loc.owner === "hostile") {
+                statusEl.textContent = "враги";
+            } else if (loc.scouted) {
+                statusEl.textContent = "разведано";
+            } else if (isAdj) {
+                statusEl.textContent = getScoutCost(loc) + " пров.";
+            } else {
+                statusEl.textContent = "туман войны";
+            }
+            div.appendChild(statusEl);
+            grid.appendChild(div);
+        });
+        this.renderActiveRouteLines();
+    },
+    /**
+     • Отрисовка зелёных линий активных маршрутов поверх сетки
+     */
+    renderActiveRouteLines() {
+        const svg = document.getElementById("route-overlay");
+        const viewport = document.getElementById("map-viewport");
+        if (!svg || !viewport) return;
+        svg.textContent = "";
+        const vpRect = viewport.getBoundingClientRect();
+        state.routes.forEach(function (r) {
+            const fromEl = document.querySelector(".loc[data-loc-index='" + r.fromIdx + "']");
+            const toEl = document.querySelector(".loc[data-loc-index='" + r.toIdx + "']");
+            if (!fromEl || !toEl) return;
+            const fRect = fromEl.getBoundingClientRect();
+            const tRect = toEl.getBoundingClientRect();
+            const line = document.createElementNS("w3.org", "line");
+            line.setAttribute("x1", String(fRect.left - vpRect.left + fRect.width / 2));
+            line.setAttribute("y1", String(fRect.top - vpRect.top + fRect.height / 2));
+            line.setAttribute("x2", String(tRect.left - vpRect.left + tRect.width / 2));
+            line.setAttribute("y2", String(tRect.top - vpRect.top + tRect.height / 2));
+            line.setAttribute("stroke", "#4cd137");
+            line.setAttribute("stroke-width", "3");
+            line.setAttribute("stroke-dasharray", "6,4");
+            svg.appendChild(line);
+        });
     },
     /**
      • @param {HTMLElement} parent
@@ -625,121 +786,117 @@ const UI = {
         });
     },
     /**
-     • @param {GameNode} node
+     • @param {MapLocation} loc
      */
-    openNodeModal(node) {
+    openLocationModal(loc) {
         const self = this;
-        if (!node.visible) {
-            const canScout = MapEngine.isAdjacentToVisible(node.id);
-            const cost = node.type === "res_river" ? 2 : node.circle;
-            this.openModal("Неизведанные земли", function (body) {
-                const infoCard = self.createCard(body);
-                infoCard.textContent = "Локация скрыта туманом войны.";
-                if (canScout) {
-                    self.createButton(
-                        body,
-                        "Разведать (" + cost + " провианта)",
-                        function () { Game.scoutNode(node.id); },
-                        "primary"
-                    );
-                } else {
-                    const warnCard = self.createCard(body);
-                    warnCard.style.color = "#a89b84";
-                    warnCard.textContent = "Сначала разведайте соседнюю локацию.";
-                }
+        if (!loc.scouted && loc.owner !== "player") {
+            if (!isAdjacentToVisible(loc)) return;
+            const cost = getScoutCost(loc);
+            this.openModal("Неизвестная территория", function (body) {
+                const info = self.createCard(body);
+                info.textContent = "Стоимость разведки: " + cost + " провианта (круг " + getRingFromStart(loc) + ").";
+                self.createButton(
+                    body,
+                    "🔍 Разведать (" + cost + " пров.)",
+                    function () { Game.scoutLocation(loc.index); },
+                    "primary"
+                );
             });
             return;
         }
-        this.openModal(node.name, function (body) {
+        this.openModal(loc.name, function (body) {
             const statusCard = self.createCard(body);
-            statusCard.appendChild(document.createTextNode("Статус: "));
-            const bStatus = document.createElement("b");
-            bStatus.textContent = node.status;
-            statusCard.appendChild(bStatus);
-            const resKeys = Object.keys(node.storage || {});
+            statusCard.textContent = "Статус: " + loc.owner + " | Круг от села: " + getRingFromStart(loc);
+            const resKeys = Object.keys(loc.storage || {});
             if (resKeys.length > 0) {
-                const resText = resKeys.map(function (k) { return k + ": " + node.storage[k]; }).join(", ");
-                const storageCard = self.createCard(body);
-                storageCard.textContent = "Склад: " + resText;
+                const resText = resKeys.map(function (k) { return k + ": " + loc.storage[k]; }).join(", ");
+                const stCard = self.createCard(body);
+                stCard.textContent = "Склад: " + resText;
             }
-            if (node.status === "free") {
+            if (loc.owner === "none") {
                 self.createButton(
                     body,
-                    "Занять локацию",
-                    function () { Game.claimNode(node.id); },
+                    "🚩 Занять локацию",
+                    function () { Game.claimLocation(loc.index); },
                     "primary"
                 );
-            } else if (node.type === "city" && node.status === "neutral") {
-                const cityCard = self.createCard(body);
-                cityCard.textContent = "Горожане напуганы. Захватите лагерь бандитов, чтобы присоединить город.";
-            } else if (node.type === "bandits" && node.status === "hostile") {
+            } else if (loc.id === "city" && loc.owner === "neutral") {
+                const cCard = self.createCard(body);
+                cCard.textContent = "Горожане напуганы. Захватите лагерь бандитов, чтобы присоединить город.";
+            } else if (loc.id === "bandits" && loc.owner === "hostile") {
                 self.createButton(
                     body,
-                    "Атаковать бандитов (Витязи: " + (state.army.vityazi || 0) + ")",
-                    function () { Game.claimNode(node.id); },
+                    "⚔️ Атаковать бандитов (Витязи: " + (state.army.vityazi || 0) + ")",
+                    function () { Game.claimLocation(loc.index); },
                     "primary",
                     "#9e3b33"
                 );
             }
-            if (node.construction) {
-                const c = node.construction;
+// Стройка частокола (как в старой демке + свайп маршрута из нового ТЗ)
+            if (loc.construction) {
+                const c = loc.construction;
                 const cCard = self.createCard(body);
-                const cTitle = document.createElement("b");
-                cTitle.textContent = "Стройка: " + c.name;
-                cCard.appendChild(cTitle);
+                const title = document.createElement("b");
+                title.textContent = "Стройка: " + c.name;
+                cCard.appendChild(title);
                 cCard.appendChild(document.createTextNode(
                     " (" + c.currentAmount + "/" + c.reqAmount + " " + c.reqRes + ")"
                 ));
                 cCard.appendChild(document.createElement("br"));
                 if (c.done) {
-                    const doneBadge = document.createElement("span");
-                    doneBadge.className = "badge done";
-                    doneBadge.textContent = "Построено";
-                    cCard.appendChild(doneBadge);
+                    const badge = document.createElement("span");
+                    badge.className = "badge done";
+                    badge.textContent = "Построено";
+                    cCard.appendChild(badge);
                 } else {
                     const btnText = c.active
-                        ? "Стройка активна (проведите маршрут на карте)"
+                        ? "Стройка активна (проведите пальцем от источника к селу)"
                         : "Активировать стройку";
                     self.createButton(
                         cCard,
                         btnText,
-                        function () { self.toggleConstruction(node.id); },
+                        function () { self.toggleConstruction(loc.index); },
                         "primary"
                     );
                 }
             }
-            if (node.id === "field_1" && node.status === "owned" && node.barn && !node.barn.done) {
-                const barnCard = self.createCard(body);
-                const bTitle = document.createElement("b");
-                bTitle.textContent = "Амбар поля: ";
-                barnCard.appendChild(bTitle);
-                barnCard.appendChild(document.createTextNode(
-                    node.barn.current + "/" + node.barn.max + " ржи"
-                ));
+// Временный сбор урожая для Этапа 1 (до подключения полного экрана Поля)
+            if (loc.id === "field" && loc.owner === "player" && loc.barn && !loc.barn.done) {
+                const bCard = self.createCard(body);
+                bCard.textContent = "Амбар поля: " + loc.barn.current + "/" + loc.barn.max + " ржи";
                 self.createButton(
-                    barnCard,
-                    "Собрать урожай (+50 ржи)",
-                    function () { self.gatherHarvestTest(); },
+                    bCard,
+                    "🌾 Собрать урожай (+50 ржи)",
+                    function () { self.gatherHarvestTest(loc.index); },
                     "primary"
                 );
             }
+// Активные маршруты (7.3)
             const activeRoutes = state.routes.filter(function (r) {
-                return r.to === node.id || r.from === node.id;
+                return r.toIdx === loc.index || r.fromIdx === loc.index;
             });
             if (activeRoutes.length > 0) {
                 const rCard = self.createCard(body);
                 const rTitle = document.createElement("b");
-                rTitle.textContent = "Логистические маршруты:";
+                rTitle.textContent = "Активные маршруты:";
                 rCard.appendChild(rTitle);
                 activeRoutes.forEach(function (r) {
+                    const src = state.locations.at(r.fromIdx);
+                    const dst = state.locations.at(r.toIdx);
                     const row = document.createElement("div");
                     row.style.marginTop = "6px";
                     row.style.fontSize = "12px";
-                    row.textContent = r.from + " → " + r.to + " (" + r.resource + ") | В пути: " + r.inTransit;
+                    row.textContent =
+                        (src ? src.name : "?") + " → " + (dst ? dst.name : "?") +
+                        " (" + r.delivered + "/" + r.amountTotal + ", в пути: " + r.inTransit + ")";
                     const cancelBtn = self.createButton(
                         row,
                         "Отменить маршрут",
-                        function () { self.handleCancelRoute(r.id, node.id); },
+                        function () {
+                            Game.cancelRoute(r.id);
+                            self.openLocationModal(loc);
+                        },
                         "",
                         "#9e3b33"
                     );
@@ -747,90 +904,76 @@ const UI = {
                     rCard.appendChild(row);
                 });
             }
-            if (node.buildings && node.buildings.length > 0 && node.status === "owned") {
-                const bCard = self.createCard(body);
-                const bHeader = document.createElement("b");
-                bHeader.textContent = "Доступные постройки:";
-                bCard.appendChild(bHeader);
-                bCard.appendChild(document.createElement("br"));
-                const listSpan = document.createElement("span");
-                listSpan.style.fontSize = "12px";
-                listSpan.style.color = "#a89b84";
-                listSpan.textContent = node.buildings.join(", ");
-                bCard.appendChild(listSpan);
+            if (loc.buildings.length > 0 && loc.owner === "player") {
+                const bList = self.createCard(body);
+                const bh = document.createElement("b");
+                bh.textContent = "Постройки локации:";
+                bList.appendChild(bh);
+                bList.appendChild(document.createElement("br"));
+                const span = document.createElement("span");
+                span.style.fontSize = "12px";
+                span.style.color = "#a89b84";
+                span.textContent = loc.buildings.join(", ");
+                bList.appendChild(span);
             }
         });
     },
     /**
-     • @param {number} routeId
-     • @param {string} nodeId
+     • @param {number} locIdx
      */
-    handleCancelRoute(routeId, nodeId) {
-        Game.cancelRoute(routeId);
-        const node = state.nodes.find(function (n) { return n.id === nodeId; });
-        if (node) this.openNodeModal(node);
-    },
-    /**
-     • @param {string} nodeId
-     */
-    toggleConstruction(nodeId) {
-        const node = state.nodes.find(function (n) { return n.id === nodeId; });
-        if (node && node.construction) {
-            node.construction.active = !node.construction.active;
-            if (node.construction.active) {
-                notify("Проведите пальцем от локации-источника к этой локации на карте");
-                this.closeAllModals();
-            } else {
-                this.openNodeModal(node);
-            }
+    toggleConstruction(locIdx) {
+        const loc = state.locations.at(locIdx);
+        if (!loc || !loc.construction) return;
+        loc.construction.active = !loc.construction.active;
+        this.renderMap();
+        if (loc.construction.active) {
+            notify("Проведите пальцем от локации-источника к «" + loc.name + "»");
+            this.closeAllModals();
+        } else {
+            this.openLocationModal(loc);
         }
     },
-    gatherHarvestTest() {
-        const field = state.nodes.find(function (n) { return n.id === "field_1"; });
-        if (!field || !field.barn) return;
-        field.barn.current = Math.min(100, field.barn.current + 50);
+    /**
+     • @param {number} locIdx
+     */
+    gatherHarvestTest(locIdx) {
+        const loc = state.locations.at(locIdx);
+        if (!loc || !loc.barn) return;
+        loc.barn.current = Math.min(100, loc.barn.current + 50);
         state.provant.from_barns += 50;
-        if (field.barn.current >= 100) {
-            field.barn.done = true;
+        if (loc.barn.current >= 100) {
+            loc.barn.done = true;
             state.tasks.harvest.done = true;
             notify("Склад заполнен (100/100)");
             notify("Задание выполнено");
+            this.updateTaskBanner();
         }
-        this.openNodeModal(field);
+        this.openLocationModal(loc);
     },
     /**
-     • @param {GameNode} fromNode
-     • @param {GameNode} toNode
+     • @param {MapLocation} fromLoc
+     • @param {MapLocation} toLoc
      */
-    openRouteCreator(fromNode, toNode) {
-        if (!toNode.construction) return;
-        const keys = Object.keys(fromNode.storage || {}).filter(function (k) {
-            return fromNode.storage[k] > 0;
+    openRouteCreator(fromLoc, toLoc) {
+        if (!toLoc.construction) return;
+        const keys = Object.keys(fromLoc.storage || {}).filter(function (k) {
+            return fromLoc.storage[k] > 0;
         });
         if (keys.length === 0) {
             notify("На складе источника нет ресурсов!");
             return;
         }
         const self = this;
-        const targetName = toNode.construction.name;
+        const targetName = toLoc.construction.name;
         this.openModal("Создание маршрута", function (body) {
-            const infoCard = self.createCard(body);
-            infoCard.appendChild(document.createTextNode("Откуда: "));
-            const bFrom = document.createElement("b");
-            bFrom.textContent = fromNode.name;
-            infoCard.appendChild(bFrom);
-            infoCard.appendChild(document.createElement("br"));
-            infoCard.appendChild(document.createTextNode("Куда: "));
-            const bTo = document.createElement("b");
-            bTo.textContent = toNode.name;
-            infoCard.appendChild(bTo);
-            infoCard.appendChild(document.createTextNode(" (" + targetName + ")"));
+            const info = self.createCard(body);
+            info.textContent = "Откуда: " + fromLoc.name + " → Куда: " + toLoc.name + " (" + targetName + ")";
             keys.forEach(function (res) {
                 self.createButton(
                     body,
-                    "Возить: " + res + " (доступно " + fromNode.storage[res] + ")",
+                    "🚚 Возить: " + res + " (на складе: " + fromLoc.storage[res] + ")",
                     function () {
-                        Game.createRoute(fromNode.id, toNode.id, res);
+                        Game.createRoute(fromLoc.index, toLoc.index, res);
                         self.closeAllModals();
                     },
                     "primary"
@@ -840,249 +983,142 @@ const UI = {
     }
 };
 // ============================================================================
-// ДВИЖОК КАРТЫ И ЖЕСТОВ (Разделы 1.3, 10.3)
+// ЖЕСТЫ НА КАРТЕ (Тап, проведение маршрута пальцем, зум и сдвиг — 10.3)
 // ============================================================================
-const MapEngine = {
-    /** @type {HTMLCanvasElement|null} /
-     canvas: null,
-     /* @type {CanvasRenderingContext2D|null} /
-     ctx: null,
-     camX: 0,
-     camY: 0,
-     zoom: 1,
-     /* @type {Map<number, {x: number, y: number}>} /
+const Gestures = {
+    /** @type {Map<number, {x: number, y: number}>} /
      pointers: new Map(),
-     isDragging: false,
-     dragStart: { x: 0, y: 0, rawX: 0, rawY: 0 },
-     /* @type {GameNode|null} /
-     routeDragFrom: null,
-     /* @type {{x: number, y: number}|null} /
-     routeDragPos: null,
-     /* @type {number|null} */
-    lastPinchDist: null,
+     /* @type {MapLocation|null} /
+     dragFromLoc: null,
+     /* @type {SVGLineElement|null} */
+    tempLine: null,
+    startX: 0,
+    startY: 0,
+    panX: 0,
+    panY: 0,
+    zoom: 1,
+    lastPinchDist: 0,
+    moved: false,
     init() {
-        const el = document.getElementById("map-canvas");
-        if (!(el instanceof HTMLCanvasElement)) return;
-        this.canvas = el;
-        this.ctx = el.getContext("2d");
-        this.resize();
+        const viewport = document.getElementById("map-viewport");
+        const grid = document.getElementById("map-grid");
+        const svg = document.getElementById("route-overlay");
+        if (!viewport || !grid || !svg) return;
         const self = this;
-        window.addEventListener("resize", function () { self.resize(); });
-        this.bindEvents();
-    },
-    resize() {
-        if (!this.canvas || !this.canvas.parentElement) return;
-        const rect = this.canvas.parentElement.getBoundingClientRect();
-        this.canvas.width = rect.width;
-        this.canvas.height = rect.height;
-    },
-    /**
-     • @param {number} sx
-     • @param {number} sy
-     • @returns {{x: number, y: number}}
-     */
-    screenToWorld(sx, sy) {
-        const w = this.canvas ? this.canvas.width : 0;
-        const h = this.canvas ? this.canvas.height : 0;
-        return {
-            x: (sx - w / 2 - this.camX) / this.zoom,
-            y: (sy - h / 2 - this.camY) / this.zoom
+        const applyTransform = function () {
+            grid.style.transform = "translate(" + self.panX + "px, " + self.panY + "px) scale(" + self.zoom + ")";
+            UI.renderActiveRouteLines();
         };
-    },
-    /**
-     • @param {number} wx
-     • @param {number} wy
-     • @returns {GameNode|undefined}
-     */
-    getNodeAt(wx, wy) {
-        return state.nodes.find(function (n) { return Math.hypot(n.x - wx, n.y - wy) <= 28; });
-    },
-    /**
-     • @param {string} nodeId
-     • @returns {boolean}
-     */
-    isAdjacentToVisible(nodeId) {
-        return state.edges.some(function (edge) {
-            const [u, v] = edge;
-            if (u === nodeId) {
-                const neighbor = state.nodes.find(function (n) { return n.id === v; });
-                return Boolean(neighbor && neighbor.visible);
-            }
-            if (v === nodeId) {
-                const neighbor = state.nodes.find(function (n) { return n.id === u; });
-                return Boolean(neighbor && neighbor.visible);
-            }
-            return false;
-        });
-    },
-    bindEvents() {
-        const c = this.canvas;
-        if (!c) return;
-        const self = this;
-        c.addEventListener("wheel", function (e) {
+        viewport.addEventListener("wheel", function (e) {
             e.preventDefault();
-            const factor = e.deltaY < 0 ? 1.1 : 0.9;
-            self.zoom = Math.min(2.2, Math.max(0.5, self.zoom * factor));
+            const factor = e.deltaY < 0 ? 1.08 : 0.92;
+            self.zoom = Math.min(1.8, Math.max(0.75, self.zoom * factor));
+            applyTransform();
         }, { passive: false });
-        c.addEventListener("pointerdown", function (e) {
+        viewport.addEventListener("pointerdown", function (e) {
             self.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            const rect = c.getBoundingClientRect();
-            const sx = e.clientX - rect.left;
-            const sy = e.clientY - rect.top;
+            self.moved = false;
             if (self.pointers.size === 1) {
-                const w = self.screenToWorld(sx, sy);
-                const hit = self.getNodeAt(w.x, w.y);
-                const hasActiveConstruction = state.nodes.some(function (n) {
-                    return Boolean(n.construction && n.construction.active);
+                self.startX = e.clientX;
+                self.startY = e.clientY;
+                const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+                const locEl = targetEl ? targetEl.closest(".loc") : null;
+                const hasActiveConstruction = state.locations.some(function (l) {
+                    return Boolean(l.construction && l.construction.active);
                 });
-                if (hit && hit.visible && hit.status === "owned" && hasActiveConstruction) {
-                    self.routeDragFrom = hit;
-                    self.routeDragPos = w;
-                } else {
-                    self.isDragging = true;
-                    self.dragStart = { x: sx - self.camX, y: sy - self.camY, rawX: sx, rawY: sy };
+                if (locEl && locEl instanceof HTMLElement && hasActiveConstruction) {
+                    const idx = Number(locEl.dataset.locIndex);
+                    const loc = state.locations.at(idx);
+                    if (loc && loc.owner === "player") {
+                        self.dragFromLoc = loc;
+                        const vpRect = viewport.getBoundingClientRect();
+                        const lRect = locEl.getBoundingClientRect();
+                        const line = document.createElementNS("w3.org", "line");
+                        line.setAttribute("x1", String(lRect.left - vpRect.left + lRect.width / 2));
+                        line.setAttribute("y1", String(lRect.top - vpRect.top + lRect.height / 2));
+                        line.setAttribute("x2", String(e.clientX - vpRect.left));
+                        line.setAttribute("y2", String(e.clientY - vpRect.top));
+                        line.setAttribute("stroke", "#fbc531");
+                        line.setAttribute("stroke-width", "4");
+                        svg.appendChild(line);
+                        self.tempLine = line;
+                    }
                 }
             } else if (self.pointers.size === 2) {
-                self.isDragging = false;
-                self.routeDragFrom = null;
-                self.lastPinchDist = self.getPinchDistance();
+                if (self.tempLine) {
+                    self.tempLine.remove();
+                    self.tempLine = null;
+                }
+                self.dragFromLoc = null;
+                const pts = Array.from(self.pointers.values());
+                const p0 = pts.at(0);
+                const p1 = pts.at(1);
+                if (p0 && p1) {
+                    self.lastPinchDist = Math.hypot(p0.x - p1.x, p0.y - p1.y);
+                }
             }
         });
-        c.addEventListener("pointermove", function (e) {
+        viewport.addEventListener("pointermove", function (e) {
             if (!self.pointers.has(e.pointerId)) return;
             self.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            const rect = c.getBoundingClientRect();
-            const sx = e.clientX - rect.left;
-            const sy = e.clientY - rect.top;
             if (self.pointers.size === 2) {
-                const dist = self.getPinchDistance();
-                if (self.lastPinchDist) {
-                    const scale = dist / self.lastPinchDist;
-                    self.zoom = Math.min(2.2, Math.max(0.5, self.zoom * scale));
+                const pts = Array.from(self.pointers.values());
+                const p0 = pts.at(0);
+                const p1 = pts.at(1);
+                if (p0 && p1) {
+                    const dist = Math.hypot(p0.x - p1.x, p0.y - p1.y);
+                    if (self.lastPinchDist > 0) {
+                        self.zoom = Math.min(1.8, Math.max(0.75, self.zoom * (dist / self.lastPinchDist)));
+                        applyTransform();
+                    }
+                    self.lastPinchDist = dist;
                 }
-                self.lastPinchDist = dist;
-            } else if (self.routeDragFrom) {
-                self.routeDragPos = self.screenToWorld(sx, sy);
-            } else if (self.isDragging) {
-                self.camX = sx - self.dragStart.x;
-                self.camY = sy - self.dragStart.y;
+                return;
+            }
+            if (Math.hypot(e.clientX - self.startX, e.clientY - self.startY) > 8) {
+                self.moved = true;
+            }
+            if (self.dragFromLoc && self.tempLine) {
+                const vpRect = viewport.getBoundingClientRect();
+                self.tempLine.setAttribute("x2", String(e.clientX - vpRect.left));
+                self.tempLine.setAttribute("y2", String(e.clientY - vpRect.top));
+            } else if (self.pointers.size === 1 && self.moved) {
+                self.panX += e.clientX - self.startX;
+                self.panY += e.clientY - self.startY;
+                self.startX = e.clientX;
+                self.startY = e.clientY;
+                applyTransform();
             }
         });
         /**
          * @param {PointerEvent} e
          */
-        const endPointer = function (e) {
-            const rect = c.getBoundingClientRect();
-            const sx = e.clientX - rect.left;
-            const sy = e.clientY - rect.top;
-            if (self.routeDragFrom) {
-                const w = self.screenToWorld(sx, sy);
-                const target = self.getNodeAt(w.x, w.y);
-                if (target && target.id !== self.routeDragFrom.id && target.construction && target.construction.active) {
-                    UI.openRouteCreator(self.routeDragFrom, target);
-                } else if (target && target.id === self.routeDragFrom.id) {
-                    UI.openNodeModal(target);
+        const onEnd = function (e) {
+            if (self.tempLine) {
+                self.tempLine.remove();
+                self.tempLine = null;
+            }
+            const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+            const locEl = targetEl ? targetEl.closest(".loc") : null;
+            if (self.dragFromLoc && self.moved && locEl && locEl instanceof HTMLElement) {
+                const toIdx = Number(locEl.dataset.locIndex);
+                const toLoc = state.locations.at(toIdx);
+                if (toLoc && toLoc.index !== self.dragFromLoc.index && toLoc.construction && toLoc.construction.active) {
+                    UI.openRouteCreator(self.dragFromLoc, toLoc);
                 }
-                self.routeDragFrom = null;
-                self.routeDragPos = null;
-            } else if (self.isDragging && self.pointers.size === 1) {
-                if (Math.hypot(sx - self.dragStart.rawX, sy - self.dragStart.rawY) < 10) {
-                    const w = self.screenToWorld(sx, sy);
-                    const hit = self.getNodeAt(w.x, w.y);
-                    if (hit && (hit.visible || self.isAdjacentToVisible(hit.id))) {
-                        UI.openNodeModal(hit);
-                    }
+            } else if (!self.moved && self.pointers.size === 1 && locEl && locEl instanceof HTMLElement) {
+                const idx = Number(locEl.dataset.locIndex);
+                const loc = state.locations.at(idx);
+                if (loc) {
+                    UI.openLocationModal(loc);
                 }
             }
+            self.dragFromLoc = null;
             self.pointers.delete(e.pointerId);
-            if (self.pointers.size < 2) self.lastPinchDist = null;
-            if (self.pointers.size === 0) self.isDragging = false;
+            if (self.pointers.size < 2) self.lastPinchDist = 0;
         };
-        c.addEventListener("pointerup", endPointer);
-        c.addEventListener("pointercancel", endPointer);
-    },
-    /**
-     • @returns {number}
-     */
-    getPinchDistance() {
-        const pts = Array.from(this.pointers.values());
-        const p0 = pts.at(0);
-        const p1 = pts.at(1);
-        if (!p0 || !p1) return 0;
-        return Math.hypot(p0.x - p1.x, p0.y - p1.y);
-    },
-    render() {
-        const ctx = this.ctx;
-        const canvas = this.canvas;
-        if (!ctx || !canvas) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        ctx.translate(canvas.width / 2 + this.camX, canvas.height / 2 + this.camY);
-        ctx.scale(this.zoom, this.zoom);
-        state.edges.forEach(function (edge) {
-            const [idA, idB] = edge;
-            const a = state.nodes.find(function (n) { return n.id === idA; });
-            const b = state.nodes.find(function (n) { return n.id === idB; });
-            if (!a || !b) return;
-            if (!a.visible && !b.visible) return;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.strokeStyle = (a.visible && b.visible) ? "#8c6d3f" : "rgba(140, 109, 63, 0.35)";
-            ctx.lineWidth = 3;
-            ctx.stroke();
-        });
-        state.routes.forEach(function (r) {
-            const a = state.nodes.find(function (n) { return n.id === r.from; });
-            const b = state.nodes.find(function (n) { return n.id === r.to; });
-            if (!a || !b) return;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.strokeStyle = "#4cd137";
-            ctx.lineWidth = 2;
-            ctx.setLineDash(Array.of(6, 4));
-            ctx.stroke();
-            ctx.setLineDash(Array.of());
-        });
-        if (this.routeDragFrom && this.routeDragPos) {
-            ctx.beginPath();
-            ctx.moveTo(this.routeDragFrom.x, this.routeDragFrom.y);
-            ctx.lineTo(this.routeDragPos.x, this.routeDragPos.y);
-            ctx.strokeStyle = "#fbc531";
-            ctx.lineWidth = 3;
-            ctx.stroke();
-        }
-        const self = this;
-        state.nodes.forEach(function (node) {
-            const adj = self.isAdjacentToVisible(node.id);
-            if (!node.visible && !adj) return;
-            ctx.beginPath();
-            ctx.arc(node.x, node.y, 24, 0, Math.PI * 2);
-            if (!node.visible) {
-                ctx.fillStyle = "#353b48";
-                ctx.strokeStyle = "#718093";
-            } else if (node.status === "owned") {
-                ctx.fillStyle = "#4a7c59";
-                ctx.strokeStyle = "#e6c27a";
-            } else if (node.status === "hostile") {
-                ctx.fillStyle = "#9e3b33";
-                ctx.strokeStyle = "#ff7675";
-            } else {
-                ctx.fillStyle = "#3b6998";
-                ctx.strokeStyle = "#dcdde1";
-            }
-            ctx.lineWidth = (node.construction && node.construction.active) ? 4 : 2;
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = "#f0e6d2";
-            ctx.font = "12px sans-serif";
-            ctx.textAlign = "center";
-            const cost = node.type === "res_river" ? 2 : node.circle;
-            const label = node.visible ? node.name : "? (" + cost + " пров.)";
-            ctx.fillText(label, node.x, node.y + 38);
-        });
-        ctx.restore();
+        viewport.addEventListener("pointerup", onEnd);
+        viewport.addEventListener("pointercancel", onEnd);
     }
 };
 window.Game = Game;

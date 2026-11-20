@@ -147,10 +147,9 @@ function generateMap() {
     /** @type {MapLocation[]} */
     const locs = [];
 
-    // Стартовое село в левом нижнем углу (как стартовая клетка в старой демке)
-    const startIdx = (rows - 1) * cols; // index 16 (row 4, col 0)
-    const fieldIdx = startIdx - cols;   // index 12 (row 3, col 0) — сосед сверху
-    const forestIdx = startIdx + 1;     // index 17 (row 4, col 1) — сосед справа
+    const startIdx = (rows - 1) * cols; // левый нижний угол (row 4, col 0)
+    const fieldIdx = startIdx - cols;   // сосед сверху (row 3, col 0)
+    const forestIdx = startIdx + 1;     // сосед справа (row 4, col 1)
 
     /** @type {Array.<string|null>} */
     const types = new Array(total).fill(null);
@@ -158,9 +157,8 @@ function generateMap() {
     types.splice(fieldIdx, 1, "field");
     types.splice(forestIdx, 1, "forest");
 
-    // Обязательные узлы миссии в глубине карты (3-4 круги от старта)
     const cityIdx = 2;     // row 0, col 2
-    const banditsIdx = 3;  // row 0, col 3 (рядом с городом)
+    const banditsIdx = 3;  // row 0, col 3
     const riverIdx = 9;    // row 2, col 1
     const pastureIdx = 14; // row 3, col 2
     const minesIdx = 11;   // row 2, col 3
@@ -212,7 +210,6 @@ function generateMap() {
         }
 
         if (typeId === "forest") {
-            // Временный запас древесины до подключения детального экрана Леса
             loc.storage = { wood: 160 };
         }
 
@@ -317,7 +314,6 @@ function getTotalWood() {
 }
 
 /**
- * Манхэттенское расстояние (круги от стартового села — 4.1)
  * @param {MapLocation} loc
  * @returns {number}
  */
@@ -328,7 +324,6 @@ function getRingFromStart(loc) {
 }
 
 /**
- * Стоимость разведки (4.1: по кругам, но река всегда 2 провианта)
  * @param {MapLocation} loc
  * @returns {number}
  */
@@ -338,7 +333,6 @@ function getScoutCost(loc) {
 }
 
 /**
- * Проверка соседства по кресту (как в старой демке isAdjacentToPlayer)
  * @param {MapLocation} loc
  * @returns {boolean}
  */
@@ -351,6 +345,7 @@ function isAdjacentToVisible(loc) {
     if (loc.col < cols - 1) neighbors.push(loc.index + 1);
     if (loc.row > 0) neighbors.push(loc.index - cols);
     if (loc.row < rows - 1) neighbors.push(loc.index + cols);
+
     return neighbors.some(function (nIdx) {
         const n = state.locations.at(nIdx);
         return Boolean(n && (n.owner === "player" || n.scouted));
@@ -411,7 +406,6 @@ const Game = {
         }
     },
     /**
-     • 7.2 Работа логистических маршрутов
      • @param {number} dt
      • @returns {boolean}
      */
@@ -481,7 +475,6 @@ const Game = {
         }
     },
     /**
-     • 4.1 Разведка
      • @param {number} locIdx
      */
     scoutLocation(locIdx) {
@@ -498,7 +491,6 @@ const Game = {
         UI.openLocationModal(loc);
     },
     /**
-     • 4.2 Присоединение / Захват
      • @param {number} locIdx
      */
     claimLocation(locIdx) {
@@ -527,7 +519,6 @@ const Game = {
         }
     },
     /**
-     • 7.1 Создание маршрута (5 сек × количество шагов по сетке)
      • @param {number} fromIdx
      • @param {number} toIdx
      • @param {string} resource
@@ -555,7 +546,6 @@ const Game = {
         UI.renderMap();
     },
     /**
-     • 7.3 Отмена маршрута
      • @param {number} routeId
      */
     cancelRoute(routeId) {
@@ -610,13 +600,11 @@ const UI = {
         }
         el.textContent = "✅ Все текущие задачи выполнены";
     },
-    /**
-     • Отрисовка сеточной карты 4x5 (как в старой демке)
-     */
     renderMap() {
         const grid = document.getElementById("map-grid");
         if (!grid) return;
         grid.textContent = "";
+        const self = this;
         state.locations.forEach(function (loc) {
             const div = document.createElement("div");
             div.className = "loc";
@@ -629,7 +617,6 @@ const UI = {
             if (loc.owner === "neutral") div.classList.add("neutral");
             if (!showInfo && !isAdj) div.classList.add("locked");
             if (loc.construction && loc.construction.active) div.classList.add("construction-target");
-// Бейджи стройки и маршрутов на клетке (из старой демки)
             if (loc.construction && (loc.construction.active || loc.construction.done)) {
                 const badge = document.createElement("div");
                 badge.className = "loc-construction-badge";
@@ -670,13 +657,14 @@ const UI = {
                 statusEl.textContent = "туман войны";
             }
             div.appendChild(statusEl);
+            div.addEventListener("click", function () {
+                if (Gestures.wasDragging) return;
+                self.openLocationModal(loc);
+            });
             grid.appendChild(div);
         });
         this.renderActiveRouteLines();
     },
-    /**
-     • Отрисовка зелёных линий активных маршрутов поверх сетки
-     */
     renderActiveRouteLines() {
         const svg = document.getElementById("route-overlay");
         const viewport = document.getElementById("map-viewport");
@@ -833,7 +821,6 @@ const UI = {
                     "#9e3b33"
                 );
             }
-// Стройка частокола (как в старой демке + свайп маршрута из нового ТЗ)
             if (loc.construction) {
                 const c = loc.construction;
                 const cCard = self.createCard(body);
@@ -861,7 +848,6 @@ const UI = {
                     );
                 }
             }
-// Временный сбор урожая для Этапа 1 (до подключения полного экрана Поля)
             if (loc.id === "field" && loc.owner === "player" && loc.barn && !loc.barn.done) {
                 const bCard = self.createCard(body);
                 bCard.textContent = "Амбар поля: " + loc.barn.current + "/" + loc.barn.max + " ржи";
@@ -872,7 +858,6 @@ const UI = {
                     "primary"
                 );
             }
-// Активные маршруты (7.3)
             const activeRoutes = state.routes.filter(function (r) {
                 return r.toIdx === loc.index || r.fromIdx === loc.index;
             });
@@ -983,7 +968,7 @@ const UI = {
     }
 };
 // ============================================================================
-// ЖЕСТЫ НА КАРТЕ (Тап, проведение маршрута пальцем, зум и сдвиг — 10.3)
+// ЖЕСТЫ НА КАРТЕ (Проведение маршрута пальцем, зум и сдвиг — 10.3)
 // ============================================================================
 const Gestures = {
     /** @type {Map<number, {x: number, y: number}>} /
@@ -998,7 +983,7 @@ const Gestures = {
     panY: 0,
     zoom: 1,
     lastPinchDist: 0,
-    moved: false,
+    wasDragging: false,
     init() {
         const viewport = document.getElementById("map-viewport");
         const grid = document.getElementById("map-grid");
@@ -1017,7 +1002,7 @@ const Gestures = {
         }, { passive: false });
         viewport.addEventListener("pointerdown", function (e) {
             self.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            self.moved = false;
+            self.wasDragging = false;
             if (self.pointers.size === 1) {
                 self.startX = e.clientX;
                 self.startY = e.clientY;
@@ -1075,14 +1060,14 @@ const Gestures = {
                 }
                 return;
             }
-            if (Math.hypot(e.clientX - self.startX, e.clientY - self.startY) > 8) {
-                self.moved = true;
+            if (Math.hypot(e.clientX - self.startX, e.clientY - self.startY) > 10) {
+                self.wasDragging = true;
             }
             if (self.dragFromLoc && self.tempLine) {
                 const vpRect = viewport.getBoundingClientRect();
                 self.tempLine.setAttribute("x2", String(e.clientX - vpRect.left));
                 self.tempLine.setAttribute("y2", String(e.clientY - vpRect.top));
-            } else if (self.pointers.size === 1 && self.moved) {
+            } else if (self.pointers.size === 1 && self.wasDragging) {
                 self.panX += e.clientX - self.startX;
                 self.panY += e.clientY - self.startY;
                 self.startX = e.clientX;
@@ -1100,22 +1085,17 @@ const Gestures = {
             }
             const targetEl = document.elementFromPoint(e.clientX, e.clientY);
             const locEl = targetEl ? targetEl.closest(".loc") : null;
-            if (self.dragFromLoc && self.moved && locEl && locEl instanceof HTMLElement) {
+            if (self.dragFromLoc && self.wasDragging && locEl && locEl instanceof HTMLElement) {
                 const toIdx = Number(locEl.dataset.locIndex);
                 const toLoc = state.locations.at(toIdx);
                 if (toLoc && toLoc.index !== self.dragFromLoc.index && toLoc.construction && toLoc.construction.active) {
                     UI.openRouteCreator(self.dragFromLoc, toLoc);
                 }
-            } else if (!self.moved && self.pointers.size === 1 && locEl && locEl instanceof HTMLElement) {
-                const idx = Number(locEl.dataset.locIndex);
-                const loc = state.locations.at(idx);
-                if (loc) {
-                    UI.openLocationModal(loc);
-                }
             }
             self.dragFromLoc = null;
             self.pointers.delete(e.pointerId);
             if (self.pointers.size < 2) self.lastPinchDist = 0;
+            setTimeout(function () { self.wasDragging = false; }, 50);
         };
         viewport.addEventListener("pointerup", onEnd);
         viewport.addEventListener("pointercancel", onEnd);

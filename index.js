@@ -314,12 +314,9 @@ function getGraphDistance(idA, idB) {
     while (queue.length > 0) {
         const item = queue.shift();
         if (!item) break;
-        const curr = item;
-        const dist = item;
+        const [curr, dist] = item;
 
-        for (let i = 0; i < state.edges.length; i++) {
-            const u = state.edges[i];
-            const v = state.edges[i];
+        for (const [u, v] of state.edges) {
             const next = u === curr ? v : (v === curr ? u : null);
             if (next && !visited.has(next)) {
                 if (next === idB) return dist + 1;
@@ -395,7 +392,8 @@ const Game = {
      */
     updateRoutes(dt) {
         for (let i = state.routes.length - 1; i >= 0; i--) {
-            const r = state.routes[i];
+            const r = state.routes.at(i);
+            if (!r) continue;
             const src = state.nodes.find(function (n) { return n.id === r.from; });
             const dst = state.nodes.find(function (n) { return n.id === r.to; });
             if (!src || !dst || !dst.construction || dst.construction.done) {
@@ -597,8 +595,8 @@ const UI = {
             headCard.appendChild(b);
             headCard.appendChild(document.createTextNode(stageName));
             const keys = Object.keys(state.tasks);
-            for (let i = 0; i < keys.length; i++) {
-                const t = state.tasks[keys[i]];
+            for (const key of keys) {
+                const t = state.tasks[key];
                 const card = self.createCard(body);
                 const badge = document.createElement("span");
                 badge.className = t.done ? "badge done" : "badge";
@@ -905,8 +903,7 @@ const MapEngine = {
      */
     isAdjacentToVisible(nodeId) {
         return state.edges.some(function (edge) {
-            const u = edge;
-            const v = edge;
+            const [u, v] = edge;
             if (u === nodeId) {
                 const neighbor = state.nodes.find(function (n) { return n.id === v; });
                 return Boolean(neighbor && neighbor.visible);
@@ -922,6 +919,11 @@ const MapEngine = {
         const c = this.canvas;
         if (!c) return;
         const self = this;
+        c.addEventListener("wheel", function (e) {
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.1 : 0.9;
+            self.zoom = Math.min(2.2, Math.max(0.5, self.zoom * factor));
+        }, { passive: false });
         c.addEventListener("pointerdown", function (e) {
             self.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
             const rect = c.getBoundingClientRect();
@@ -930,7 +932,9 @@ const MapEngine = {
             if (self.pointers.size === 1) {
                 const w = self.screenToWorld(sx, sy);
                 const hit = self.getNodeAt(w.x, w.y);
-                const hasActiveConstruction = state.nodes.some(function (n) { return Boolean(n.construction && n.construction.active); });
+                const hasActiveConstruction = state.nodes.some(function (n) {
+                    return Boolean(n.construction && n.construction.active);
+                });
                 if (hit && hit.visible && hit.status === "owned" && hasActiveConstruction) {
                     self.routeDragFrom = hit;
                     self.routeDragPos = w;
@@ -1002,9 +1006,9 @@ const MapEngine = {
      */
     getPinchDistance() {
         const pts = Array.from(this.pointers.values());
-        if (pts.length < 2) return 0;
-        const p0 = pts;
-        const p1 = pts;
+        const p0 = pts.at(0);
+        const p1 = pts.at(1);
+        if (!p0 || !p1) return 0;
         return Math.hypot(p0.x - p1.x, p0.y - p1.y);
     },
     render() {
@@ -1016,8 +1020,9 @@ const MapEngine = {
         ctx.translate(canvas.width / 2 + this.camX, canvas.height / 2 + this.camY);
         ctx.scale(this.zoom, this.zoom);
         state.edges.forEach(function (edge) {
-            const a = state.nodes.find(function (n) { return n.id === edge; });
-            const b = state.nodes.find(function (n) { return n.id === edge; });
+            const [idA, idB] = edge;
+            const a = state.nodes.find(function (n) { return n.id === idA; });
+            const b = state.nodes.find(function (n) { return n.id === idB; });
             if (!a || !b) return;
             if (!a.visible && !b.visible) return;
             ctx.beginPath();
@@ -1036,9 +1041,9 @@ const MapEngine = {
             ctx.lineTo(b.x, b.y);
             ctx.strokeStyle = "#4cd137";
             ctx.lineWidth = 2;
-            ctx.setLineDash();
+            ctx.setLineDash(Array.of(6, 4));
             ctx.stroke();
-            ctx.setLineDash([]);
+            ctx.setLineDash(Array.of());
         });
         if (this.routeDragFrom && this.routeDragPos) {
             ctx.beginPath();

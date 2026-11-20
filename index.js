@@ -1,935 +1,2002 @@
-/**
- * Хроники Державы — index.js (финальная переработка)
- * Целевой стандарт: ES2022, DOM.
- */
+'use strict';
 
-// ============================================================================
-// КОНФИГУРАЦИЯ
-// ============================================================================
+// ============================================================
+// КОНФИГ
+// ============================================================
 const CONFIG = {
     map: { cols: 4, rows: 5 },
-    startingResources: { wood: 10, provant: 20, peasants: 5, vityazi: 1 },
-    route: { maxPerTrip: 25, secPerStep: 5 },
-    stockadeCostWood: 150
+
+    startingResources: {
+        wood: 10,
+        provant: 20,
+        peasants: 5,
+        army: { vityaz: 1 }
+    },
+
+    scoutCostByRing: [1, 2, 3, 4, 5, 6, 7, 8],
+    scoutRiverCost: 2,
+
+    city: {
+        stockadeCostWood: 150,
+        missionTimeLimitSec: 600,
+        prepTimeLimitSec: 600
+    },
+
+    forest: {
+        upperWidth: 6,
+        upperHeight: 5,
+        upperTotal: 30,
+        resourceSquares: 3,
+        amountPerSquare: 75,
+        unlockCostProvant: 1,
+        warehouseCapacity: 100,
+        warehouseCosts: [10, 12, 14, 16, 18, 20, 22],
+        extractionTimeMs: 5000
+    },
+
+    field: {
+        width: 6,
+        height: 5,
+        total: 30,
+        barnCapacity: 100,
+        growthTimeSec: 60,
+        seedsPerSquare: 10,
+        yieldPerSquare: 50,
+        startingSeeds: 50,
+        barnCosts: [10, 12, 14, 16, 18, 20, 22]
+    },
+
+    route: {
+        maxPerTrip: 25,
+        secPerStep: 5,
+        stepDelayMs: 1000,
+        tickMs: 250
+    },
+
+    paternalismStart: 50,
+    passionarityStart: 50,
+
+    bandits: {
+        count: 3,
+        hpEach: 30,
+        atk: 6
+    },
+
+    vityaz: {
+        hp: 40,
+        atk: 12,
+        costProvant: 15
+    },
+
+    raid: {
+        count: 4,
+        hpEach: 25,
+        atk: 8
+    },
+
+    armyCosts: {
+        vityaz: { provant: 15 }
+    }
 };
 
-const MISSION_STAGES = [
-    { id: 1, name: "Село", timer: 600 },
-    { id: 2, name: "Разведка" },
-    { id: 3, name: "Присоединение города" },
-    { id: 4, name: "Развитие города" },
-    { id: 5, name: "Подготовка к набегу", timer: 600 },
-    { id: 6, name: "Отражение набега" }
-];
+const PLANTS = {
+    rye: { id: 'rye', name: 'Рожь', icon: '🌾' }
+};
 
-const SVG_NS = "http://www.w3.org/2000/svg";
+// ============================================================
+// СОСТОЯНИЕ
+// ============================================================
+const state = {
+    stage: 1,
+    resources: {
+        provantStarting: 0,
+        woodStarting: 0,
+        peasantsTotal: 0
+    },
+    army: { vityaz: 0 },
+    seeds: { rye: 50 },
+    paternalism: 50,
+    passionarity: 50,
+    tasks: {},
+    locations: [],
+    routes: [],
+    selectedLoc: null,
+    selectedForestTile: null,
+    selectedFieldTile: null,
+    selectedSeedType: 'rye',
+    currentVillageLoc: null,
+    currentCityLoc: null,
+    currentForestLoc: null,
+    currentFieldLoc: null,
+    currentBanditLoc: null,
+    currentArmyLoc: null,
+    battle: null,
+    gameOver: false,
+    missionStarted: false,
+    missionTimeLeft: 0,
+    raidStarted: false,
 
-function LOCATION_DEF(typeId) {
-    switch (typeId) {
-        case "village":
-            return {
-                name: "Село", icon: "🏘️", owner: "none",
-                buildings: [
-                    "Лесопилка", "Смолокурня", "Угольная яма", "Плотницкая",
-                    "Кожевня", "Мельница", "Маслобойня", "Коптильня", "Медоварня", "Пекарня"
-                ]
-            };
-        case "city":
-            return {
-                name: "Город", icon: "🏰", owner: "neutral",
-                buildings: [
-                    "Гончарная", "Кузня", "Оружейная мастерская",
-                    "Мастерская бронника", "Верфь", "Рынок", "Княжий терем"
-                ]
-            };
-        case "bandits":
-            return { name: "Лагерь бандитов", icon: "⛺", owner: "hostile", buildings: [] };
-        case "forest":
-            return { name: "Лес", icon: "🌲", owner: "none", buildings: [] };
-        case "field":
-            return { name: "Поле", icon: "🌾", owner: "none", buildings: [] };
-        case "river":
-            return { name: "Река", icon: "🌊", owner: "none", buildings: [] };
-        case "pasture":
-            return { name: "Пастбища", icon: "🐄", owner: "none", buildings: [] };
-        case "mines":
-            return { name: "Недра", icon: "⛰️", owner: "none", buildings: [] };
-        default:
-            return { name: "Пустошь", icon: "⬜", owner: "none", buildings: [] };
+    timers: {
+        patriot: null,
+        extraction: null,
+        mission: null,
+        fieldGrowth: null,
+        route: null
+    }
+};
+
+// ============================================================
+// УТИЛИТЫ
+// ============================================================
+function pickRandomDistinct(pool, count) {
+    const copy = pool.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, count);
+}
+
+function getLocationByIdx(idx) { return state.locations[idx] || null; }
+
+function setStage(n) {
+    state.stage = n;
+    renderCurrentTask();
+}
+
+// ============================================================
+// ГЕНЕРАЦИЯ
+// ============================================================
+function generateForestData() {
+    const tiles = [];
+    const warehouses = [];
+
+    const all = [];
+    for (let i = 0; i < CONFIG.forest.upperTotal; i++) all.push(i);
+    const resourceIndices = pickRandomDistinct(all, CONFIG.forest.resourceSquares);
+
+    const guaranteed = (CONFIG.forest.upperHeight - 1) * CONFIG.forest.upperWidth + 0;
+    if (!resourceIndices.includes(guaranteed)) resourceIndices[0] = guaranteed;
+
+    for (let i = 0; i < CONFIG.forest.upperTotal; i++) {
+        const col = i % CONFIG.forest.upperWidth;
+        const row = Math.floor(i / CONFIG.forest.upperWidth);
+        const isResource = resourceIndices.includes(i);
+        const isBottom = row === CONFIG.forest.upperHeight - 1;
+
+        tiles.push({
+            index: i, col, row,
+            scouted: isBottom,
+            id: isResource ? 'wood' : 'empty',
+            name: isResource ? 'Древесина' : 'Пустой квадрат леса',
+            icon: isResource ? '🪵' : '🌿',
+            amount: isResource ? CONFIG.forest.amountPerSquare : 0,
+            hasPeasant: false,
+            depleted: false
+        });
+    }
+
+    for (let i = 0; i < 7; i++) {
+        warehouses.push({ index: i, built: false, storedType: 'none', amount: 0 });
+    }
+
+    return { upperTiles: tiles, lowerWarehouses: warehouses };
+}
+
+function generateFieldData() {
+    const squares = [];
+    for (let i = 0; i < CONFIG.field.total; i++) {
+        squares.push({ index: i, planted: null, plantedAt: 0, ready: false });
+    }
+    const barns = [];
+    for (let i = 0; i < 7; i++) {
+        barns.push({ index: i, built: false, plantType: 'none', amount: 0 });
+    }
+    return { squares, barns };
+}
+
+function LOCATION_DEF(id) {
+    switch (id) {
+        case 'village': return { name: 'Село', icon: '🏘️' };
+        case 'city':    return { name: 'Город', icon: '🏛️' };
+        case 'forest':  return { name: 'Лес', icon: '🌲' };
+        case 'field':   return { name: 'Поле', icon: '🌾' };
+        case 'river':   return { name: 'Река', icon: '🌊' };
+        case 'bandit':  return { name: 'Лагерь бандитов', icon: '🏴‍☠️' };
+        default:        return { name: 'Пустошь', icon: '⬜' };
     }
 }
 
-// ============================================================================
-// ГЕНЕРАЦИЯ КАРТЫ 4x5
-// ============================================================================
 function generateMap() {
     const cols = CONFIG.map.cols;
     const rows = CONFIG.map.rows;
     const total = cols * rows;
     const locs = [];
 
-    const startIdx = (rows - 1) * cols;
-    const fieldIdx = startIdx - cols;
-    const forestIdx = startIdx + 1;
+    const villageIndex = (rows - 1) * cols + 0;
+    const forestIndex = villageIndex - 1;
+    const fieldIndex = villageIndex - cols;
+    const cityIndex = (rows - 2) * cols + 2;
+    const banditIndex = cityIndex - 1;
 
     const types = new Array(total).fill(null);
-    types[startIdx] = "village";
-    types[fieldIdx] = "field";
-    types[forestIdx] = "forest";
+    types[villageIndex] = 'village';
+    types[forestIndex] = 'forest';
+    types[fieldIndex] = 'field';
+    types[cityIndex] = 'city';
+    types[banditIndex] = 'bandit';
 
-    types[2] = "city";
-    types[3] = "bandits";
-    types[9] = "river";
-    types[14] = "pasture";
-    types[11] = "mines";
-
-    const pool = ["forest", "field", "river", "pasture", "mines", "empty", "empty"];
+    const pool = ['field', 'forest', 'village', 'river', 'empty', 'empty'];
     for (let i = 0; i < total; i++) {
-        if (types[i] === null) types[i] = pool[Math.floor(Math.random() * pool.length)];
+        if (types[i]) continue;
+        types[i] = pool[Math.floor(Math.random() * pool.length)];
     }
 
     for (let i = 0; i < total; i++) {
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const typeId = types[i] || "empty";
+        const typeId = types[i];
         const def = LOCATION_DEF(typeId);
-        const isStart = i === startIdx;
 
-        const loc = {
+        locs.push({
             index: i, col, row,
             id: typeId,
-            name: isStart ? "Село Родное" : def.name,
+            name: def.name,
             icon: def.icon,
-            owner: isStart ? "player" : def.owner,
-            scouted: isStart,
-            storage: isStart ? { wood: CONFIG.startingResources.wood } : {},
-            buildings: def.buildings
-        };
-
-        if (isStart) {
-            loc.construction = {
-                id: "palisade", name: "Частокол", reqRes: "wood",
-                reqAmount: CONFIG.stockadeCostWood, currentAmount: 0,
-                active: false, done: false
-            };
-        }
-        if (typeId === "forest") loc.storage = { wood: 160 };
-        if (typeId === "field") {
-            loc.storage = { rye: 0 };
-            loc.barn = { current: 0, max: 100, done: false };
-        }
-        locs.push(loc);
+            owner: i === villageIndex ? 'player' : 'none',
+            scouted: i === villageIndex,
+            baseBuilt: i === villageIndex,
+            stockadeBuilt: false,
+            stockadeCollectedWood: 0,
+            activeConstruction: null,
+            joinedCity: false,
+            banditsDefeated: false,
+            forestData: typeId === 'forest' ? generateForestData() : null,
+            fieldData:  typeId === 'field'  ? generateFieldData()  : null
+        });
     }
+
     return locs;
 }
 
-// ============================================================================
-// СОСТОЯНИЕ
-// ============================================================================
-function createInitialState() {
-    return {
-        current_era: 0,
-        current_region: "rus_region_1",
-        current_mission: "mission_1",
-        current_stage: 1,
-        provant: { starting_supply: 20, from_barns: 0 },
-        workers: { free: 5, total: 5 },
-        resources: {},
-        routes: [],
-        mission_timer: 600.0,
-        tasks: {
-            palisade: { title: "Построить частокол (150 древесины)", done: false, stage: 1 },
-            harvest: { title: "Собрать урожай (заполнить амбар в поле)", done: false, stage: 1 },
-            find_city: { title: "Разведать территорию и найти город", done: false, stage: 2 },
-            defeat_bandits: { title: "Победить бандитов и присоединить город", done: false, stage: 3 }
-        },
-        paternalism: 50,
-        passionarity: 50,
-        army: { vityazi: 1 },
-        locations: generateMap()
+// ============================================================
+// ИНИЦИАЛИЗАЦИЯ
+// ============================================================
+function initState() {
+    stopAllTimers();
+
+    state.stage = 1;
+    state.resources = { provantStarting: 20, woodStarting: 10, peasantsTotal: 5 };
+    state.army = { vityaz: 1 };
+    state.seeds = { rye: CONFIG.field.startingSeeds };
+    state.paternalism = CONFIG.paternalismStart;
+    state.passionarity = CONFIG.passionarityStart;
+    state.tasks = {
+        stockade: false,
+        barnFull: false,
+        findCity: false,
+        defeatBandits: false,
+        joinCity: false,
+        prepareRaid: false
     };
+
+    state.locations = generateMap();
+    state.routes = [];
+    state.selectedLoc = null;
+    state.selectedForestTile = null;
+    state.selectedFieldTile = null;
+    state.selectedSeedType = 'rye';
+    state.currentVillageLoc = null;
+    state.currentCityLoc = null;
+    state.currentForestLoc = null;
+    state.currentFieldLoc = null;
+    state.currentBanditLoc = null;
+    state.currentArmyLoc = null;
+    state.battle = null;
+    state.gameOver = false;
+    state.missionStarted = true;
+    state.missionTimeLeft = CONFIG.city.missionTimeLimitSec;
+    state.raidStarted = false;
+
+    renderResources();
+    renderMap();
+    renderCurrentTask();
+    hideNotifications();
+    closeActionPanel();
+    closeModal();
+    startTimers();
 }
 
-let state = createInitialState();
-
-// ============================================================================
-// УТИЛИТЫ
-// ============================================================================
-function notify(text) {
-    const container = document.getElementById("toast-container");
-    if (!container) return;
-    const el = document.createElement("div");
-    el.className = "toast";
-    el.textContent = text;
-    container.appendChild(el);
-    setTimeout(() => el.remove(), 3500);
+function stopAllTimers() {
+    Object.keys(state.timers).forEach(k => {
+        if (state.timers[k]) { clearInterval(state.timers[k]); state.timers[k] = null; }
+    });
 }
 
-function getTotalProvant() {
-    return state.provant.starting_supply + state.provant.from_barns;
+function startTimers() {
+    state.timers.patriot = setInterval(gameTick, 10000);
+    state.timers.extraction = setInterval(forestExtractionTick, CONFIG.forest.extractionTimeMs);
+    state.timers.mission = setInterval(missionTick, 1000);
+    state.timers.fieldGrowth = setInterval(fieldGrowthTick, 1000);
+    state.timers.route = setInterval(routesTick, CONFIG.route.tickMs);
 }
 
-function spendProvant(amount) {
-    if (getTotalProvant() < amount) return false;
-    if (state.provant.starting_supply >= amount) {
-        state.provant.starting_supply -= amount;
-        if (state.provant.starting_supply === 0) notify("Стартовый запас провианта исчерпан");
-    } else {
-        const rem = amount - state.provant.starting_supply;
-        if (state.provant.starting_supply > 0) {
-            state.provant.starting_supply = 0;
-            notify("Стартовый запас провианта исчерпан");
+function startMission() {
+    showScreen('map-screen');
+    initState();
+}
+
+// ============================================================
+// НАВИГАЦИЯ ЭКРАНОВ
+// ============================================================
+function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const el = document.getElementById(id);
+    if (el) el.classList.add('active');
+}
+
+// ============================================================
+// ТИКИ
+// ============================================================
+function gameTick() {
+    if (state.gameOver) return;
+    if (state.paternalism > 0) state.paternalism = Math.max(0, state.paternalism - 1);
+    renderResources();
+}
+
+function missionTick() {
+    if (state.gameOver || !state.missionStarted) return;
+
+    if (state.stage === 1 || state.stage === 4) {
+        state.missionTimeLeft -= 1;
+        if (state.missionTimeLeft <= 0) {
+            state.missionTimeLeft = 0;
+            renderTimer();
+            if (state.stage === 1) {
+                const ok = state.tasks.stockade && state.tasks.barnFull;
+                if (!ok) {
+                    endGame(false, 'Ты не успел обустроить село: частокол и амбар не готовы. Крестьяне разочарованы и уходят.');
+                    return;
+                }
+            } else if (state.stage === 4) {
+                state.stage = 5;
+                state.missionTimeLeft = CONFIG.city.prepTimeLimitSec;
+                renderCurrentTask();          // ← ВОТ ЭТА СТРОКА (добавить)
+                notify('Город присоединён. Подготовка к набегу: 10 минут', 'warn', 4000);
+            }
         }
-        state.provant.from_barns = Math.max(0, state.provant.from_barns - rem);
+    } else if (state.stage === 5) {
+        state.missionTimeLeft -= 1;
+        if (state.missionTimeLeft <= 0) {
+            state.missionTimeLeft = 0;
+            renderTimer();
+            startRaid();
+            return;
+        }
     }
-    return true;
+    renderTimer();
 }
 
-function getTotalWood() {
-    return state.locations.reduce((sum, loc) => sum + (loc.storage.wood || 0), 0);
+function forestExtractionTick() {
+    if (state.gameOver) return;
+    let needRender = false;
+
+    state.locations.forEach(loc => {
+        if (loc.id !== 'forest' || loc.owner !== 'player' || !loc.forestData) return;
+        loc.forestData.upperTiles.forEach(tile => {
+            if (!tile.hasPeasant || tile.depleted || tile.id === 'empty' || tile.amount <= 0) return;
+            const warehouse = loc.forestData.lowerWarehouses.find(
+                w => w.built && w.storedType === tile.id && w.amount < CONFIG.forest.warehouseCapacity
+            );
+            if (!warehouse) return;
+
+            tile.amount -= 1;
+            warehouse.amount += 1;
+            needRender = true;
+
+            if (tile.amount <= 0) {
+                tile.amount = 0;
+                tile.hasPeasant = false;
+                tile.depleted = true;
+                tile.id = 'empty';
+                tile.name = 'Пустой квадрат леса';
+                tile.icon = '🌿';
+            }
+        });
+    });
+
+    if (needRender) {
+        renderResources();
+        if (state.currentForestLoc) {
+            renderForestScreen(state.currentForestLoc);
+            if (state.selectedForestTile) refreshForestActionPanel();
+        }
+    }
 }
 
-function getRingFromStart(loc) {
-    return Math.abs(loc.col) + Math.abs(loc.row - (CONFIG.map.rows - 1));
+function fieldGrowthTick() {
+    if (state.gameOver) return;
+    let needRender = false;
+
+    state.locations.forEach(loc => {
+        if (loc.id !== 'field' || !loc.fieldData) return;
+        loc.fieldData.squares.forEach(sq => {
+            if (sq.planted && !sq.ready) {
+                const elapsed = (Date.now() - sq.plantedAt) / 1000;
+                if (elapsed >= CONFIG.field.growthTimeSec) {
+                    sq.ready = true;
+                    needRender = true;
+                } else if (state.currentFieldLoc === loc) {
+                    needRender = true;
+                }
+            }
+        });
+    });
+
+    if (needRender) {
+        if (state.currentFieldLoc) renderFieldScreen(state.currentFieldLoc);
+        if (state.selectedFieldTile) refreshFieldActionPanel(state.currentFieldLoc);
+    }
+    checkBarnTask();
 }
 
-function getScoutCost(loc) {
-    if (loc.id === "river") return 2;
-    return Math.max(1, getRingFromStart(loc));
+// ============================================================
+// МАРШРУТЫ
+// ============================================================
+function routesTick() {
+    if (state.gameOver) return;
+    if (!state.routes.length) return;
+
+    const now = Date.now();
+    let needMapRender = false;
+    let needCityRender = false;
+    let needVillageRender = false;
+
+    state.routes.forEach(route => {
+        if (route.status !== 'active') return;
+        if (now < route.nextDepartAt) return;
+
+        if (route.currentTrip === null) {
+            const source = state.locations.find(l => l.index === route.fromIdx);
+            if (!source || !source.forestData) { route.status = 'cancelled'; return; }
+
+            const available = getForestWoodTotal(source);
+            if (available <= 0 && route.delivered < route.amountTotal) {
+                route.status = 'paused';
+                return;
+            }
+
+            const remaining = route.amountTotal - route.delivered;
+            const tripAmount = Math.min(available, remaining, CONFIG.route.maxPerTrip);
+            if (tripAmount <= 0) { route.status = 'cancelled'; return; }
+
+            spendForestWood(source, tripAmount);
+            route.currentTrip = {
+                amount: tripAmount,
+                departAt: now,
+                arriveAt: now + route.stepMs
+            };
+            needMapRender = true;
+        }
+
+        if (route.currentTrip && now >= route.currentTrip.arriveAt) {
+            route.delivered += route.currentTrip.amount;
+            const target = state.locations.find(l => l.index === route.toIdx);
+            if (target) {
+                if (target.id === 'city' || target.id === 'village') {
+                    target.stockadeCollectedWood =
+                        Math.min(CONFIG.city.stockadeCostWood,
+                            (target.stockadeCollectedWood || 0) + route.currentTrip.amount);
+                    if (target.id === 'city') needCityRender = true;
+                    else needVillageRender = true;
+                }
+            }
+            route.currentTrip = null;
+
+            if (route.delivered >= route.amountTotal) {
+                route.status = 'done';
+                notify('Маршрут завершён: древесина доставлена', 'success');
+            } else {
+                route.nextDepartAt = now + CONFIG.route.stepDelayMs;
+            }
+            needMapRender = true;
+        }
+    });
+
+    state.routes = state.routes.filter(r => r.status === 'active' || r.status === 'paused');
+
+    if (needMapRender) renderMap();
+    if (needCityRender && state.currentCityLoc) renderCityScreen(state.currentCityLoc);
+    if (needVillageRender && state.currentVillageLoc) renderVillageScreen(state.currentVillageLoc);
 }
 
-function isAdjacentToVisible(loc) {
+function createRoute(fromLoc, toLoc, amountTotal) {
+    const steps = Math.abs(fromLoc.col - toLoc.col) + Math.abs(fromLoc.row - toLoc.row);
+    const stepMs = Math.max(1, steps) * CONFIG.route.secPerStep * 1000;
+
+    state.routes.push({
+        id: 'route_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        fromIdx: fromLoc.index,
+        toIdx: toLoc.index,
+        amountTotal,
+        delivered: 0,
+        status: 'active',
+        stepMs,
+        currentTrip: null,
+        nextDepartAt: Date.now()
+    });
+    renderMap();
+}
+
+function getRouteSourceOptions() {
+    return state.locations.filter(loc =>
+        loc.owner === 'player' &&
+        loc.forestData &&
+        getForestWoodTotal(loc) > 0
+    );
+}
+
+function getActiveRouteFromIdx(idx) {
+    return state.routes.find(r => r.fromIdx === idx && (r.status === 'active' || r.status === 'paused'));
+}
+
+// ============================================================
+// HUD
+// ============================================================
+function renderResources() {
+    document.getElementById('r-provant').textContent = getTotalProvant();
+    document.getElementById('r-wood').textContent = getWoodTotal();
+    document.getElementById('r-peasants').textContent =
+        getFreePeasants() + ' / ' + state.resources.peasantsTotal;
+    document.getElementById('r-army').textContent = getTotalArmy();
+    document.getElementById('r-paternalism').textContent = state.paternalism;
+    document.getElementById('r-passionarity').textContent = state.passionarity;
+
+    const bar = document.getElementById('paternalism-bar');
+    const fill = document.getElementById('paternalism-fill');
+    if (bar && fill) {
+        fill.style.width = state.paternalism + '%';
+        bar.setAttribute('aria-valuenow', state.paternalism);
+    }
+    renderTimer();
+}
+
+function renderTimer() {
+    const el = document.getElementById('r-timer');
+    if (!el) return;
+    if (!state.missionStarted || state.stage === 2 || state.stage === 3) {
+        el.textContent = '--:--'; return;
+    }
+    const t = Math.max(0, state.missionTimeLeft);
+    const m = Math.floor(t / 60);
+    const s = t % 60;
+    el.textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+function getStageTaskText() {
+    if (state.stage === 1) return '📜 Этап 1: Село — частокол и амбар';
+    if (state.stage === 2) return '📜 Этап 2: Разведка — найти город';
+    if (state.stage === 3) return '📜 Этап 3: Присоединение города — победить бандитов';
+    if (state.stage === 4) return '📜 Этап 4: Развитие города';
+    if (state.stage === 5) return '📜 Этап 5: Подготовка к набегу';
+    if (state.stage === 6) return '📜 Этап 6: Отражение набега';
+    return '✅ Миссия завершена';
+}
+
+function renderCurrentTask() {
+    const el = document.getElementById('task-text');
+    if (el) el.textContent = getStageTaskText();
+}
+
+// ============================================================
+// КАРТА
+// ============================================================
+function renderMap() {
+    const grid = document.getElementById('map-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const sorted = state.locations.slice().sort((a, b) =>
+        a.row !== b.row ? a.row - b.row : a.col - b.col
+    );
+
+    sorted.forEach(loc => {
+        const div = document.createElement('div');
+        div.className = 'loc';
+
+        const isAdj = isAdjacentToPlayer(loc);
+        const showInfo = loc.scouted || loc.owner === 'player';
+
+        if (!showInfo) div.classList.add('fog');
+        if (loc.owner === 'player') div.classList.add('player');
+        if (loc.id === 'village') div.classList.add('village');
+        if (loc.id === 'city') div.classList.add('city');
+        if (loc.id === 'field') div.classList.add('field');
+        if (loc.id === 'bandit' && !loc.banditsDefeated) div.classList.add('bandit');
+        if (loc.id === 'river') div.classList.add('river');
+        if (loc.owner !== 'player' && !loc.scouted && !isAdj) div.classList.add('locked');
+
+        let statusText = 'туман войны';
+        if (loc.owner === 'player') statusText = 'под контролем';
+        else if (loc.scouted) statusText = 'разведано';
+        else if (!isAdj) statusText = 'далеко';
+
+        let badge = '';
+        if ((loc.id === 'city' || loc.id === 'village') &&
+            (loc.activeConstruction === 'stockade' || loc.stockadeBuilt)) {
+            const activeRoute = state.routes.find(r => r.toIdx === loc.index && r.status === 'active');
+            const routeInfo = activeRoute
+                ? ` · 🚚 ${activeRoute.delivered}/${activeRoute.amountTotal}` : '';
+            badge = `<div class="loc-construction-badge">🪵 ${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood}${routeInfo}</div>`;
+        } else {
+            const activeRoute = state.routes.find(r => r.fromIdx === loc.index && r.status === 'active');
+            if (activeRoute) {
+                badge = `<div class="loc-construction-badge route">🚚 ${activeRoute.delivered}/${activeRoute.amountTotal}</div>`;
+            }
+        }
+
+        div.innerHTML = `
+            ${badge}
+            <div class="loc-icon">${showInfo ? loc.icon : '❓'}</div>
+            <div class="loc-name">${showInfo ? loc.name : '???'}</div>
+            <div class="loc-status">${statusText}</div>
+        `;
+        div.addEventListener('click', () => onLocationClick(loc));
+        grid.appendChild(div);
+    });
+}
+
+function isAdjacentToPlayer(loc) {
     const cols = CONFIG.map.cols;
-    const rows = CONFIG.map.rows;
     const neighbors = [];
     if (loc.col > 0) neighbors.push(loc.index - 1);
     if (loc.col < cols - 1) neighbors.push(loc.index + 1);
     if (loc.row > 0) neighbors.push(loc.index - cols);
-    if (loc.row < rows - 1) neighbors.push(loc.index + cols);
-    return neighbors.some((nIdx) => {
-        const n = state.locations[nIdx];
-        return !!n && (n.owner === "player" || n.scouted);
+    if (loc.row < CONFIG.map.rows - 1) neighbors.push(loc.index + cols);
+    return neighbors.some(nIdx => state.locations[nIdx].owner === 'player');
+}
+
+function getRingFromVillage(loc) {
+    const village = state.locations.find(l => l.id === 'village');
+    if (!village) return 1;
+    return Math.abs(loc.col - village.col) + Math.abs(loc.row - village.row);
+}
+
+function getScoutCostForLoc(loc) {
+    if (loc.id === 'river') return CONFIG.scoutRiverCost;
+    const ring = Math.max(1, getRingFromVillage(loc));
+    return CONFIG.scoutCostByRing[Math.min(ring - 1, CONFIG.scoutCostByRing.length - 1)];
+}
+
+// ============================================================
+// ПРОВИАНТ / ДРЕВЕСИНА / КРЕСТЬЯНЕ / АРМИЯ
+// ============================================================
+function getBarnsRyeTotal() {
+    let total = 0;
+    state.locations.forEach(loc => {
+        if (!loc.fieldData) return;
+        loc.fieldData.barns.forEach(b => {
+            if (b.built && b.plantType === 'rye') total += b.amount;
+        });
+    });
+    return total;
+}
+
+function getTotalProvant() {
+    return state.resources.provantStarting + getBarnsRyeTotal();
+}
+
+function spendProvant(amount) {
+    if (getTotalProvant() < amount) return false;
+    let need = amount;
+    const fromStarting = Math.min(state.resources.provantStarting, need);
+    state.resources.provantStarting -= fromStarting;
+    need -= fromStarting;
+
+    if (need > 0) {
+        const barns = [];
+        state.locations.forEach(loc => {
+            if (!loc.fieldData) return;
+            loc.fieldData.barns.forEach(b => {
+                if (b.built && b.plantType === 'rye' && b.amount > 0) barns.push(b);
+            });
+        });
+        barns.sort((a, b) => b.amount - a.amount);
+        for (const b of barns) {
+            if (need <= 0) break;
+            const take = Math.min(b.amount, need);
+            b.amount -= take;
+            need -= take;
+        }
+    }
+    renderResources();
+    return true;
+}
+
+function getForestWoodTotal(loc) {
+    if (!loc || !loc.forestData) return 0;
+    let total = 0;
+    loc.forestData.lowerWarehouses.forEach(w => {
+        if (w.built && w.storedType === 'wood') total += w.amount;
+    });
+    return total;
+}
+
+function getWoodTotal() {
+    let total = state.resources.woodStarting || 0;
+    state.locations.forEach(loc => {
+        if (loc.forestData) total += getForestWoodTotal(loc);
+    });
+    return total;
+}
+
+function spendGlobalWood(amount) {
+    if (getWoodTotal() < amount) return false;
+    let need = amount;
+    const fromStarting = Math.min(state.resources.woodStarting || 0, need);
+    state.resources.woodStarting -= fromStarting;
+    need -= fromStarting;
+
+    if (need > 0) {
+        const whs = [];
+        state.locations.forEach(loc => {
+            if (!loc.forestData) return;
+            loc.forestData.lowerWarehouses.forEach(w => {
+                if (w.built && w.storedType === 'wood' && w.amount > 0) whs.push(w);
+            });
+        });
+        whs.sort((a, b) => b.amount - a.amount);
+        for (const w of whs) {
+            if (need <= 0) break;
+            const take = Math.min(w.amount, need);
+            w.amount -= take;
+            need -= take;
+        }
+    }
+    renderResources();
+    return need === 0;
+}
+
+function spendForestWood(loc, amount) {
+    if (!loc || !loc.forestData) return false;
+    let need = amount;
+    const whs = loc.forestData.lowerWarehouses
+        .filter(w => w.built && w.storedType === 'wood' && w.amount > 0)
+        .sort((a, b) => b.amount - a.amount);
+    for (const w of whs) {
+        if (need <= 0) break;
+        const take = Math.min(w.amount, need);
+        w.amount -= take;
+        need -= take;
+    }
+    return need === 0;
+}
+
+function getAssignedPeasants() {
+    let assigned = 0;
+    state.locations.forEach(loc => {
+        if (!loc.forestData) return;
+        loc.forestData.upperTiles.forEach(t => { if (t.hasPeasant) assigned++; });
+    });
+    return assigned;
+}
+function getFreePeasants() {
+    return Math.max(0, state.resources.peasantsTotal - getAssignedPeasants());
+}
+
+function getTotalArmy() {
+    return state.army.vityaz || 0;
+}
+
+// ============================================================
+// КЛИК ПО ЛОКАЦИИ
+// ============================================================
+function onLocationClick(loc) {
+    if (state.gameOver) return;
+    if (loc.owner !== 'player' && !loc.scouted && !isAdjacentToPlayer(loc)) return;
+
+    state.selectedLoc = loc;
+    const btns = document.getElementById('action-buttons');
+    const title = document.getElementById('action-title');
+    const desc = document.getElementById('action-desc');
+    btns.innerHTML = '';
+
+    const showInfo = loc.scouted || loc.owner === 'player';
+    title.textContent = showInfo ? loc.name : 'Неизвестная территория';
+
+    if (!loc.scouted && loc.owner !== 'player') {
+        const cost = getScoutCostForLoc(loc);
+        desc.textContent = `Стоимость разведки: ${cost} 🍞 (круг ${getRingFromVillage(loc)}).`;
+        addBtn(btns, `🔍 Разведать (${cost} 🍞)`, () => scoutLocation(loc), getTotalProvant() >= cost);
+    } else if (loc.owner !== 'player' && loc.scouted && loc.id !== 'city' && loc.id !== 'bandit') {
+        desc.textContent = 'Земля разведана. Присоедините её.';
+        addBtn(btns, '🚩 Присоединить мирно', () => {
+            loc.owner = 'player';
+            closeActionPanel();
+            renderMap();
+        }, true);
+    } else if (loc.id === 'village') {
+        desc.textContent = villageDescription(loc);
+        addBtn(btns, '🚪 Зайти в село', () => { closeActionPanel(); openVillageScreen(loc); }, true);
+    } else if (loc.id === 'city') {
+        if (!loc.joinedCity) {
+            desc.textContent = 'Город напуган. Чтобы присоединить, победите бандитов в лагере.';
+            if (loc.banditsDefeated) {
+                addBtn(btns, '🤝 Присоединить город', () => joinCity(loc), true);
+            }
+        } else {
+            desc.textContent = cityDescription(loc);
+            addBtn(btns, '🚪 Зайти в город', () => { closeActionPanel(); openCityScreen(loc); }, true);
+        }
+    } else if (loc.id === 'bandit') {
+        if (loc.banditsDefeated) {
+            desc.textContent = 'Лагерь бандитов разгромлен.';
+        } else {
+            desc.textContent = 'Лагерь бандитов. Победите их в бою, чтобы город присоединился.';
+            addBtn(btns, '⚔️ Атаковать бандитов', () => { closeActionPanel(); openBanditScreen(loc); }, true);
+        }
+    } else if (loc.id === 'forest') {
+        desc.textContent = forestDescription(loc);
+        addBtn(btns, '🚪 Зайти в лес', () => { closeActionPanel(); openForestScreen(loc); }, true);
+    } else if (loc.id === 'field') {
+        desc.textContent = fieldDescription(loc);
+        addBtn(btns, '🚪 Зайти на поле', () => { closeActionPanel(); openFieldScreen(loc); }, true);
+    } else {
+        desc.textContent = 'Тихая земля. Пока здесь нечего делать.';
+    }
+
+    document.getElementById('action-panel').classList.add('open');
+}
+
+function villageDescription(loc) {
+    if (loc.stockadeBuilt) return 'Село под контролем. Частокол построен.';
+    if (loc.activeConstruction === 'stockade')
+        return `Идёт стройка: Частокол (${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood} 🪵).`;
+    return 'Село под контролем. Постройте частокол и заполните амбар ржи.';
+}
+
+function cityDescription(loc) {
+    if (!loc.joinedCity) return 'Город ещё не присоединён.';
+    if (loc.activeConstruction === 'stockade')
+        return `Идёт стройка: Частокол (${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood} 🪵).`;
+    return 'Город под контролем.';
+}
+
+function forestDescription(loc) {
+    let s = 'Лес под контролем.\n';
+    let builtAny = false;
+    loc.forestData.lowerWarehouses.forEach((w, i) => {
+        if (w.built) {
+            builtAny = true;
+            const resName = w.storedType === 'wood' ? 'Древесина' : 'Пусто';
+            s += `• Слот ${i + 1}: ${resName} (${w.amount}/${CONFIG.forest.warehouseCapacity})\n`;
+        }
+    });
+    if (!builtAny) s += 'Склады отсутствуют.';
+    const activeRoute = getActiveRouteFromIdx(loc.index);
+    if (activeRoute) s += `\n🚚 Активный маршрут: ${activeRoute.delivered}/${activeRoute.amountTotal}`;
+    return s;
+}
+
+function fieldDescription(loc) {
+    let s = 'Поле под контролем.\n';
+    let builtAny = false;
+    loc.fieldData.barns.forEach((b, i) => {
+        if (b.built) {
+            builtAny = true;
+            const plantName = b.plantType === 'rye' ? 'Рожь' : 'Пусто';
+            s += `• Амбар ${i + 1}: ${plantName} (${b.amount}/${CONFIG.field.barnCapacity})\n`;
+        }
+    });
+    if (!builtAny) s += 'Амбары отсутствуют.';
+    s += `\nСемена ржи (общие): ${state.seeds.rye}.`;
+    return s;
+}
+
+function scoutLocation(loc) {
+    const cost = getScoutCostForLoc(loc);
+    if (!spendProvant(cost)) return;
+    loc.scouted = true;
+    notify(`Разведано: ${loc.name}`, 'success');
+    if (loc.id === 'city') {
+        state.tasks.findCity = true;
+        if (state.stage === 2) setStage(3);
+    }
+    closeActionPanel();
+    renderMap();
+}
+
+// ============================================================
+// СЕЛО
+// ============================================================
+function openVillageScreen(loc) {
+    state.currentVillageLoc = loc;
+    showScreen('village-screen');
+    renderVillageScreen(loc);
+}
+
+function renderVillageScreen(loc) {
+    if (!loc) return;
+    document.getElementById('village-title').textContent = 'Село';
+
+    const building = document.getElementById('village-building');
+    const stockade = document.getElementById('village-stockade-zone');
+    stockade.classList.toggle('built', !!loc.stockadeBuilt);
+    const sIcon = stockade.querySelector('.city-stockade-icon');
+    const sLabel = stockade.querySelector('.city-stockade-label');
+    sIcon.textContent = loc.stockadeBuilt ? '🛡️' : '🪵';
+    if (loc.stockadeBuilt) sLabel.textContent = 'Частокол построен';
+    else if (loc.activeConstruction === 'stockade')
+        sLabel.textContent = `Частокол: ${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood} 🪵`;
+    else sLabel.textContent = 'Место под частокол';
+
+    const list = document.getElementById('village-construction-list');
+    list.innerHTML = '';
+    const item = document.createElement('div');
+    item.className = 'construction-item';
+    const isActive = loc.activeConstruction === 'stockade';
+    const isDone = loc.stockadeBuilt;
+    if (isActive) item.classList.add('active');
+    if (isDone) item.classList.add('disabled');
+    item.innerHTML = `
+        <span class="ci-name">${isDone ? '🛡️ Частокол' : (isActive ? '⏳ Частокол (в процессе)' : '🪵 Частокол')}</span>
+        <span class="ci-cost">${isDone ? 'готово' : CONFIG.city.stockadeCostWood + ' 🪵'}</span>
+    `;
+    item.addEventListener('click', () => {
+        if (isDone || isActive) return;
+        loc.activeConstruction = 'stockade';
+        notify('Начата стройка: Частокол (150 🪵)', 'warn');
+        renderVillageScreen(loc);
+        renderMap();
+    });
+    list.appendChild(item);
+
+    const ul = document.getElementById('village-tasks-list');
+    ul.innerHTML = '';
+    addTaskLi(ul, 'Построить частокол (150 🪵)', state.tasks.stockade);
+    addTaskLi(ul, 'Заполнить амбар ржи ×100', state.tasks.barnFull);
+    addTaskLi(ul, 'Разведать окрестности и найти город', state.tasks.findCity);
+
+    building.onclick = () => onVillageBuildingClick(loc);
+    stockade.onclick = () => onStockadeClick(loc);
+}
+
+function addTaskLi(ul, text, done) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    if (done) li.classList.add('done');
+    ul.appendChild(li);
+}
+
+function onVillageBuildingClick(loc) {
+    openTaskDialog(loc);
+}
+
+function openTaskDialog(loc) {
+    let html = '<p>Боярин, люди напуганы. Построй частокол и наполни амбар ржи, затем разведай окрестности и найди город.</p>';
+    html += '<ul>';
+    html += `<li>${state.tasks.stockade ? '☑' : '☐'} Частокол (150 🪵)</li>`;
+    html += `<li>${state.tasks.barnFull ? '☑' : '☐'} Амбар ржи ×100</li>`;
+    html += `<li>${state.tasks.findCity ? '☑' : '☐'} Найти город</li>`;
+    html += '</ul>';
+    openModal('Задания', html, 'Закрыть', () => closeModal());
+}
+
+// ============================================================
+// ГОРОД
+// ============================================================
+function openCityScreen(loc) {
+    state.currentCityLoc = loc;
+    showScreen('city-screen');
+    renderCityScreen(loc);
+}
+
+function renderCityScreen(loc) {
+    if (!loc) return;
+    document.getElementById('city-title').textContent = 'Город';
+
+    const stockade = document.getElementById('city-stockade-zone');
+    stockade.classList.toggle('built', !!loc.stockadeBuilt);
+    const sIcon = stockade.querySelector('.city-stockade-icon');
+    const sLabel = stockade.querySelector('.city-stockade-label');
+    sIcon.textContent = loc.stockadeBuilt ? '🛡️' : '🪵';
+    if (loc.stockadeBuilt) sLabel.textContent = 'Частокол построен';
+    else if (loc.activeConstruction === 'stockade')
+        sLabel.textContent = `Частокол: ${loc.stockadeCollectedWood}/${CONFIG.city.stockadeCostWood} 🪵`;
+    else sLabel.textContent = 'Место под частокол';
+
+    const list = document.getElementById('city-buildings-list');
+    list.innerHTML = '';
+    const item = document.createElement('div');
+    item.className = 'construction-item';
+    const isActive = loc.activeConstruction === 'stockade';
+    const isDone = loc.stockadeBuilt;
+    if (isActive) item.classList.add('active');
+    if (isDone) item.classList.add('disabled');
+    item.innerHTML = `
+        <span class="ci-name">${isDone ? '🛡️ Частокол' : (isActive ? '⏳ Частокол (в процессе)' : '🪵 Частокол')}</span>
+        <span class="ci-cost">${isDone ? 'готово' : CONFIG.city.stockadeCostWood + ' 🪵'}</span>
+    `;
+    item.addEventListener('click', () => {
+        if (isDone || isActive) return;
+        loc.activeConstruction = 'stockade';
+        notify('Начата стройка: Частокол (150 🪵)', 'warn');
+        renderCityScreen(loc);
+        renderMap();
+    });
+    list.appendChild(item);
+
+    const ul = document.getElementById('city-tasks-list');
+    ul.innerHTML = '';
+    addTaskLi(ul, 'Развитие города (торговля, терем)', false);
+    addTaskLi(ul, 'Подготовка к набегу (найм в тереме)', state.tasks.prepareRaid);
+
+    document.getElementById('city-building').onclick = () => {
+        if (state.stage >= 4) openArmyScreen(loc);
+        else openTaskDialog(loc);
+    };
+    stockade.onclick = () => onStockadeClick(loc);
+}
+
+function joinCity(loc) {
+    loc.joinedCity = true;
+    loc.owner = 'player';
+    loc.scouted = true;
+    state.tasks.joinCity = true;
+    state.resources.peasantsTotal += 15;
+    setStage(4);
+    state.missionTimeLeft = CONFIG.city.missionTimeLimitSec;
+    notify('Город присоединён! +15 крестьян. Этап 4: развитие города', 'success', 4000);
+    closeActionPanel();
+    renderMap();
+    renderResources();
+    openCityScreen(loc);
+}
+
+function onStockadeClick(loc) {
+    if (loc.stockadeBuilt) { notify('Частокол уже построен', 'success'); return; }
+
+    if (loc.activeConstruction !== 'stockade') {
+        loc.activeConstruction = 'stockade';
+        notify('Начата стройка: Частокол (150 🪵)', 'warn');
+        renderCityScreen(loc);
+        renderMap();
+        return;
+    }
+
+    openStockadeActionPanel(loc);
+}
+
+function openStockadeActionPanel(loc) {
+    const btns = document.getElementById('action-buttons');
+    const title = document.getElementById('action-title');
+    const desc = document.getElementById('action-desc');
+    btns.innerHTML = '';
+
+    title.textContent = 'Стройка: Частокол';
+
+    const have = loc.stockadeCollectedWood;
+    const need = CONFIG.city.stockadeCostWood;
+    let descText = `Собрано: ${have} / ${need} 🪵.\nТребуется ещё: ${Math.max(0, need - have)} 🪵.`;
+
+    const activeRouteToCity = state.routes.find(r => r.toIdx === loc.index && (r.status === 'active' || r.status === 'paused'));
+    if (activeRouteToCity) {
+        descText += `\n🚚 Активный маршрут: ${activeRouteToCity.delivered}/${activeRouteToCity.amountTotal}`;
+    }
+    desc.textContent = descText;
+
+    if (have >= need) {
+        addBtn(btns, '🏗️ Построить частокол', () => completeStockade(loc), true);
+    } else {
+        const sources = getRouteSourceOptions();
+        if (!sources.length) {
+            addBtn(btns, '🚚 Нет источников с древесиной', () => {}, false);
+        } else {
+            sources.forEach(src => {
+                const activeRoute = getActiveRouteFromIdx(src.index);
+                if (activeRoute) {
+                    addBtn(btns,
+                        `🚚 ${src.name}: уже в пути (${activeRoute.delivered}/${activeRoute.amountTotal})`,
+                        () => {}, false);
+                } else {
+                    const woodInSource = getForestWoodTotal(src);
+                    const remainingNeed = need - have;
+                    const defaultAmount = Math.min(woodInSource, remainingNeed, CONFIG.route.maxPerTrip);
+                    addBtn(btns,
+                        `🚚 Из «${src.name}» (${defaultAmount} 🪵)`,
+                        () => {
+                            const amount = Math.min(woodInSource, remainingNeed);
+                            createRoute(src, loc, amount);
+                            notify(`Маршрут отправлен: ${amount} 🪵 из «${src.name}»`, 'success');
+                            closeActionPanel();
+                            renderMap();
+                            if (state.currentCityLoc) renderCityScreen(loc);
+                            if (state.currentVillageLoc) renderVillageScreen(loc);
+                        },
+                        woodInSource > 0);
+                }
+            });
+        }
+    }
+    document.getElementById('action-panel').classList.add('open');
+}
+
+function completeStockade(loc) {
+    if (loc.stockadeCollectedWood < CONFIG.city.stockadeCostWood) return;
+    loc.stockadeBuilt = true;
+    loc.activeConstruction = null;
+
+    if (loc.id === 'village') {
+        state.tasks.stockade = true;
+        notify('Частокол в селе построен!', 'success');
+        checkVillageStage();
+    } else {
+        notify('Частокол в городе построен!', 'success');
+    }
+
+    renderCurrentTask();
+    if (state.currentCityLoc === loc) renderCityScreen(loc);
+    if (state.currentVillageLoc === loc) renderVillageScreen(loc);
+    renderMap();
+}
+
+// ============================================================
+// ПРОВЕРКА ЭТАПА СЕЛА
+// ============================================================
+function checkVillageStage() {
+    if (state.stage !== 1) return;
+    if (state.tasks.stockade && state.tasks.barnFull) {
+        setStage(2);
+        state.missionTimeLeft = 0;
+        notify('Село обустроено! Этап 2: разведка окрестностей', 'success', 4000);
+    }
+}
+
+function checkBarnTask() {
+    if (state.tasks.barnFull) return;
+    let full = false;
+    state.locations.forEach(loc => {
+        if (!loc.fieldData) return;
+        loc.fieldData.barns.forEach(b => {
+            if (b.built && b.plantType === 'rye' && b.amount >= CONFIG.field.barnCapacity) full = true;
+        });
+    });
+    if (full) {
+        state.tasks.barnFull = true;
+        notify('Задание выполнено: амбар ржи заполнен!', 'success');
+        checkVillageStage();
+        if (state.currentVillageLoc) renderVillageScreen(state.currentVillageLoc);
+    }
+}
+
+// ============================================================
+// ЛЕС
+// ============================================================
+function openForestScreen(loc) {
+    state.currentForestLoc = loc;
+    showScreen('submap-screen');
+    renderForestScreen(loc);
+}
+
+function backToGlobalMap() {
+    closeActionPanel();
+    state.currentForestLoc = null;
+    state.selectedForestTile = null;
+    showScreen('map-screen');
+    renderMap();
+}
+
+function renderForestScreen(loc) {
+    if (!loc || !loc.forestData) return;
+
+    const upper = document.getElementById('submap-grid-upper');
+    upper.innerHTML = '';
+    loc.forestData.upperTiles.forEach(tile => {
+        const div = document.createElement('div');
+        div.className = 'forest-tile';
+
+        if (!tile.scouted) {
+            div.classList.add('upper-fog');
+            div.innerHTML = `<span class="tile-icon">❓</span>`;
+            if (isAdjacentInForest(tile, loc.forestData.upperTiles)) {
+                div.addEventListener('click', () => onForestUpperClick(tile));
+            } else div.classList.add('locked');
+        } else {
+            if (tile.depleted || tile.id === 'empty') {
+                div.classList.add('upper-empty');
+                div.innerHTML = `<span class="tile-icon">${tile.icon}</span>`;
+            } else {
+                div.classList.add(tile.hasPeasant ? 'upper-working' : 'upper-resource');
+                div.innerHTML = `
+                    <span class="tile-icon">${tile.icon}</span>
+                    <span class="tile-badge">${tile.hasPeasant ? '👨‍🌾 ' : ''}${tile.amount}</span>
+                `;
+            }
+            div.addEventListener('click', () => onForestUpperClick(tile));
+        }
+        upper.appendChild(div);
+    });
+
+    const lower = document.getElementById('submap-grid-lower');
+    lower.innerHTML = '';
+    loc.forestData.lowerWarehouses.forEach(w => {
+        const div = document.createElement('div');
+        div.className = 'forest-tile';
+        if (!w.built) {
+            div.classList.add('lower-empty');
+            div.innerHTML = `<span class="tile-icon">➕</span>`;
+        } else {
+            div.classList.add('lower-warehouse');
+            const icon = w.storedType === 'wood' ? '🪵' : '⬜';
+            div.innerHTML = `
+                <span class="tile-icon">🏠</span>
+                <span class="tile-badge">${icon}:${w.amount}</span>
+            `;
+        }
+        div.addEventListener('click', () => onForestLowerClick(w));
+        lower.appendChild(div);
     });
 }
 
-// ============================================================================
-// ИГРОВАЯ ЛОГИКА
-// ============================================================================
-const Game = {
-    running: false,
-    lastTick: 0,
+function isAdjacentInForest(tile, allTiles) {
+    const w = CONFIG.forest.upperWidth;
+    const neighbors = [];
+    if (tile.col > 0) neighbors.push(tile.index - 1);
+    if (tile.col < w - 1) neighbors.push(tile.index + 1);
+    if (tile.row > 0) neighbors.push(tile.index - w);
+    if (tile.row < CONFIG.forest.upperHeight - 1) neighbors.push(tile.index + w);
+    return neighbors.some(nIdx => allTiles[nIdx].scouted);
+}
 
-    startMission() {
-        state = createInitialState();
-        document.getElementById("menu-screen")?.classList.remove("active");
-        document.getElementById("game-screen")?.classList.add("active");
-        Gestures.init();
-        this.running = true;
-        this.lastTick = performance.now();
-        notify("Вы получили стартовый запас: 20 провианта, 10 древесины, 5 крестьян, 1 юнит витязей");
-        UI.renderAll();
-        requestAnimationFrame((t) => this.loop(t));
-    },
+function onForestUpperClick(tile) {
+    if (state.gameOver) return;
+    state.selectedForestTile = { type: 'upper', data: tile };
+    refreshForestActionPanel();
+}
 
-    loop(now) {
-        if (!this.running) return;
-        const dt = (now - this.lastTick) / 1000;
-        this.lastTick = now;
-        this.updateTimers(dt);
-        const routesChanged = this.updateRoutes(dt);
-        this.checkStageProgression();
-        UI.updateTopBar();
-        if (routesChanged) UI.renderMap();
-        requestAnimationFrame((t) => this.loop(t));
-    },
+function onForestLowerClick(warehouse) {
+    if (state.gameOver) return;
+    state.selectedForestTile = { type: 'lower', data: warehouse };
+    refreshForestActionPanel();
+}
 
-    updateTimers(dt) {
-        const stageObj = MISSION_STAGES.find((s) => s.id === state.current_stage);
-        if (stageObj && stageObj.timer && state.mission_timer > 0) {
-            state.mission_timer = Math.max(0, state.mission_timer - dt);
-            if (state.mission_timer === 0) {
-                if (state.current_stage === 1) notify("Время этапа 1 вышло!");
-                else if (state.current_stage === 5) {
-                    state.current_stage = 6;
-                    notify("Начался вражеский набег!");
-                }
-            }
-        }
-    },
+function refreshForestActionPanel() {
+    if (!state.selectedForestTile || !state.currentForestLoc) return;
 
-    updateRoutes(dt) {
-        let changed = false;
-        for (let i = state.routes.length - 1; i >= 0; i--) {
-            const r = state.routes[i];
-            const src = state.locations[r.fromIdx];
-            const dst = state.locations[r.toIdx];
-            if (!src || !dst || !dst.construction || dst.construction.done) {
-                if (r.inTransit > 0 && src) {
-                    src.storage[r.resource] = (src.storage[r.resource] || 0) + r.inTransit;
-                }
-                state.routes.splice(i, 1);
-                changed = true;
-                continue;
-            }
-            if (r.inTransit > 0) {
-                r.progressMs += dt * 1000;
-                if (r.progressMs >= r.stepMs) {
-                    dst.construction.currentAmount += r.inTransit;
-                    r.delivered += r.inTransit;
-                    r.inTransit = 0;
-                    r.progressMs = 0;
-                    changed = true;
-                    if (dst.construction.currentAmount >= dst.construction.reqAmount) {
-                        dst.construction.currentAmount = dst.construction.reqAmount;
-                        dst.construction.done = true;
-                        dst.construction.active = false;
-                        state.routes.splice(i, 1);
-                        notify("Маршрут завершён");
-                        if (dst.construction.id === "palisade") {
-                            state.tasks.palisade.done = true;
-                            notify("Задание выполнено");
-                        }
-                    }
-                }
-            } else {
-                const needed = dst.construction.reqAmount - dst.construction.currentAmount;
-                const available = src.storage[r.resource] || 0;
-                if (available > 0 && needed > 0) {
-                    const batch = Math.min(CONFIG.route.maxPerTrip, available, needed);
-                    src.storage[r.resource] -= batch;
-                    r.inTransit = batch;
-                    r.progressMs = 0;
-                    r.status = "active";
-                    changed = true;
-                } else if (needed > 0 && r.status !== "paused") {
-                    r.status = "paused";
-                    changed = true;
-                }
-            }
-        }
-        return changed;
-    },
+    const { type, data: item } = state.selectedForestTile;
+    const btns = document.getElementById('action-buttons');
+    const title = document.getElementById('action-title');
+    const desc = document.getElementById('action-desc');
+    btns.innerHTML = '';
 
-    checkStageProgression() {
-        if (state.current_stage === 1 && state.tasks.palisade.done && state.tasks.harvest.done) {
-            state.current_stage = 2;
-            state.mission_timer = 0;
-            notify("Этап 2: Разведка и поиск города");
-            UI.updateTaskBanner();
-        }
-        const city = state.locations.find((l) => l.id === "city");
-        if (state.current_stage === 2 && city && city.scouted) {
-            state.tasks.find_city.done = true;
-            state.current_stage = 3;
-            notify("Задание выполнено! Этап 3: Присоединение города");
-            UI.updateTaskBanner();
-        }
-    },
-
-    scoutLocation(locIdx) {
-        const loc = state.locations[locIdx];
-        if (!loc || loc.scouted) return;
-        const cost = getScoutCost(loc);
-        if (!spendProvant(cost)) {
-            notify("Недостаточно провианта (нужно " + cost + ")");
-            return;
-        }
-        loc.scouted = true;
-        notify("Разведано: " + loc.name);
-        UI.renderMap();
-        UI.openLocationModal(loc);
-    },
-
-    claimLocation(locIdx) {
-        const loc = state.locations[locIdx];
-        if (!loc || !loc.scouted) return;
-        if (loc.owner === "none") {
-            loc.owner = "player";
-            notify("Локация «" + loc.name + "» занята");
-            UI.renderMap();
-            UI.openLocationModal(loc);
-        } else if (loc.id === "bandits" && loc.owner === "hostile") {
-            if ((state.army.vityazi || 0) >= 1) {
-                loc.owner = "player";
-                const city = state.locations.find((l) => l.id === "city");
-                if (city) city.owner = "player";
-                state.workers.free += 15;
-                state.workers.total += 15;
-                state.tasks.defeat_bandits.done = true;
-                state.current_stage = 4;
-                notify("Задание выполнено! Бандиты разбиты, город присоединился (+15 крестьян)");
-                UI.renderAll();
-                UI.openLocationModal(loc);
-            } else {
-                notify("Нет войск для атаки!");
-            }
-        }
-    },
-
-    createRoute(fromIdx, toIdx, resource) {
-        const src = state.locations[fromIdx];
-        const dst = state.locations[toIdx];
-        if (!src || !dst || !dst.construction) return;
-        const steps = Math.max(1, Math.abs(src.col - dst.col) + Math.abs(src.row - dst.row));
-        const stepMs = steps * CONFIG.route.secPerStep * 1000;
-        const needed = dst.construction.reqAmount - dst.construction.currentAmount;
-        state.routes.push({
-            id: Date.now() + Math.floor(Math.random() * 1000),
-            fromIdx, toIdx, resource,
-            amountTotal: needed, delivered: 0,
-            stepMs, progressMs: 0, inTransit: 0, status: "active"
-        });
-        notify("Маршрут создан (рейс: " + (steps * CONFIG.route.secPerStep) + " сек.)");
-        UI.renderMap();
-    },
-
-    cancelRoute(routeId) {
-        const idx = state.routes.findIndex((r) => r.id === routeId);
-        if (idx !== -1) {
-            const r = state.routes[idx];
-            const src = state.locations[r.fromIdx];
-            if (src && r.inTransit > 0) {
-                src.storage[r.resource] = (src.storage[r.resource] || 0) + r.inTransit;
-            }
-            state.routes.splice(idx, 1);
-            notify("Маршрут отменён");
-            UI.renderMap();
-        }
-    }
-};
-
-// ============================================================================
-// UI
-// ============================================================================
-const UI = {
-    renderAll() {
-        this.updateTopBar();
-        this.updateTaskBanner();
-        this.renderMap();
-    },
-
-    updateTopBar() {
-        const setText = (id, val) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = val;
-        };
-        setText("ui-provant", String(getTotalProvant()));
-        setText("ui-wood", String(getTotalWood()));
-        setText("ui-workers", state.workers.free + "/" + state.workers.total);
-        setText("ui-pat-pas", state.paternalism + "% / " + state.passionarity + "%");
-        const stageObj = MISSION_STAGES.find((s) => s.id === state.current_stage);
-        if (stageObj && stageObj.timer) {
-            const m = Math.floor(state.mission_timer / 60).toString().padStart(2, "0");
-            const s = Math.floor(state.mission_timer % 60).toString().padStart(2, "0");
-            setText("ui-timer", m + ":" + s);
+    if (type === 'upper') {
+        if (!item.scouted) {
+            title.textContent = 'Густая лесная чаща';
+            desc.textContent =
+                `Квадрат скрыт ветвями. Прорубить тропу к ресурсам?\n` +
+                `Стоимость: ${CONFIG.forest.unlockCostProvant} 🍞 провианта.`;
+            addBtn(btns, '🪓 Прорубить просеку',
+                () => unlockForestSquare(item),
+                getTotalProvant() >= CONFIG.forest.unlockCostProvant);
         } else {
-            setText("ui-timer", "—");
-        }
-    },
-
-    updateTaskBanner() {
-        const el = document.getElementById("ui-current-task");
-        if (!el) return;
-        for (const k of Object.keys(state.tasks)) {
-            if (!state.tasks[k].done) {
-                el.textContent = "📜 " + state.tasks[k].title;
-                return;
-            }
-        }
-        el.textContent = "✅ Все текущие задачи выполнены";
-    },
-
-    renderMap() {
-        const grid = document.getElementById("map-grid");
-        if (!grid) return;
-        const frag = document.createDocumentFragment();
-
-        state.locations.forEach((loc) => {
-            const div = document.createElement("div");
-            div.className = "loc";
-            div.dataset.locIndex = String(loc.index);
-
-            const isAdj = isAdjacentToVisible(loc);
-            const showInfo = loc.scouted || loc.owner === "player";
-
-            if (!showInfo) div.classList.add("fog");
-            if (loc.owner === "player") div.classList.add("player");
-            if (loc.owner === "hostile") div.classList.add("hostile");
-            if (loc.owner === "neutral") div.classList.add("neutral");
-            if (!showInfo && !isAdj) div.classList.add("locked");
-            if (loc.construction && loc.construction.active) div.classList.add("construction-target");
-
-            if (loc.construction && (loc.construction.active || loc.construction.done)) {
-                const routeTo = state.routes.find((r) => r.toIdx === loc.index);
-                const routeStr = routeTo ? " · 🚚 " + routeTo.delivered + "/" + routeTo.amountTotal : "";
-                const badge = document.createElement("div");
-                badge.className = "loc-construction-badge";
-                badge.textContent = "🪵 " + loc.construction.currentAmount + "/" + loc.construction.reqAmount + routeStr;
-                div.appendChild(badge);
+            title.textContent = item.name;
+            if (item.id === 'empty' || item.depleted) {
+                desc.textContent = 'Здесь нет ничего ценного, обычная поляна.';
             } else {
-                const routeFrom = state.routes.find((r) => r.fromIdx === loc.index);
-                if (routeFrom) {
-                    const badge = document.createElement("div");
-                    badge.className = "loc-construction-badge";
-                    badge.textContent = "🚚 " + routeFrom.delivered + "/" + routeFrom.amountTotal;
-                    div.appendChild(badge);
-                }
-            }
-
-            const iconEl = document.createElement("div");
-            iconEl.className = "loc-icon";
-            iconEl.textContent = showInfo ? loc.icon : "❓";
-            div.appendChild(iconEl);
-
-            const nameEl = document.createElement("div");
-            nameEl.className = "loc-name";
-            nameEl.textContent = showInfo ? loc.name : "???";
-            div.appendChild(nameEl);
-
-            const statusEl = document.createElement("div");
-            statusEl.className = "loc-status";
-            if (loc.owner === "player") statusEl.textContent = "под контролем";
-            else if (loc.owner === "neutral") statusEl.textContent = "нейтрально";
-            else if (loc.owner === "hostile") statusEl.textContent = "враги";
-            else if (loc.scouted) statusEl.textContent = "разведано";
-            else if (isAdj) statusEl.textContent = getScoutCost(loc) + " пров.";
-            else statusEl.textContent = "туман войны";
-            div.appendChild(statusEl);
-
-            div.addEventListener("click", () => {
-                if (Gestures.wasDragging) return;
-                this.openLocationModal(loc);
-            });
-
-            frag.appendChild(div);
-        });
-
-        grid.textContent = "";
-        grid.appendChild(frag);
-        this.renderActiveRouteLines();
-    },
-
-    renderActiveRouteLines() {
-        const svg = document.getElementById("route-overlay");
-        const viewport = document.getElementById("map-viewport");
-        if (!svg || !viewport) return;
-        svg.textContent = "";
-        const vpRect = viewport.getBoundingClientRect();
-
-        state.routes.forEach((r) => {
-            const fromEl = document.querySelector(".loc[data-loc-index='" + r.fromIdx + "']");
-            const toEl = document.querySelector(".loc[data-loc-index='" + r.toIdx + "']");
-            if (!fromEl || !toEl) return;
-            const fRect = fromEl.getBoundingClientRect();
-            const tRect = toEl.getBoundingClientRect();
-            const line = document.createElementNS(SVG_NS, "line");
-            line.setAttribute("x1", String(fRect.left - vpRect.left + fRect.width / 2));
-            line.setAttribute("y1", String(fRect.top - vpRect.top + fRect.height / 2));
-            line.setAttribute("x2", String(tRect.left - vpRect.left + tRect.width / 2));
-            line.setAttribute("y2", String(tRect.top - vpRect.top + tRect.height / 2));
-            line.setAttribute("stroke", "#4cd137");
-            line.setAttribute("stroke-width", "3");
-            line.setAttribute("stroke-dasharray", "6,4");
-            svg.appendChild(line);
-        });
-    },
-
-    createCard(parent) {
-        const card = document.createElement("div");
-        card.className = "card-item";
-        parent.appendChild(card);
-        return card;
-    },
-
-    createButton(parent, text, onClick, className, bgColor) {
-        const btn = document.createElement("button");
-        if (className) btn.className = className;
-        if (bgColor) btn.style.background = bgColor;
-        btn.textContent = text;
-        btn.addEventListener("click", () => onClick());
-        parent.appendChild(btn);
-        return btn;
-    },
-
-    openModal(title, renderContent) {
-        const elTitle = document.getElementById("modal-title");
-        const elBody = document.getElementById("modal-body");
-        const elOverlay = document.getElementById("modal-overlay");
-        if (!elTitle || !elBody || !elOverlay) return;
-        elTitle.textContent = title;
-        elBody.textContent = "";
-        renderContent(elBody);
-        elOverlay.classList.add("open");
-    },
-
-    closeAllModals() {
-        const el = document.getElementById("modal-overlay");
-        if (el) el.classList.remove("open");
-    },
-
-    openTasks() {
-        this.openModal("Задания миссии", (body) => {
-            const stageObj = MISSION_STAGES.find((s) => s.id === state.current_stage);
-            const headCard = this.createCard(body);
-            const b = document.createElement("b");
-            b.textContent = "Текущий этап " + state.current_stage + ": ";
-            headCard.appendChild(b);
-            headCard.appendChild(document.createTextNode(stageObj ? stageObj.name : ""));
-
-            Object.keys(state.tasks).forEach((key) => {
-                const t = state.tasks[key];
-                const card = this.createCard(body);
-                const badge = document.createElement("span");
-                badge.className = t.done ? "badge done" : "badge";
-                badge.textContent = t.done ? "Выполнено" : "В процессе";
-                card.appendChild(badge);
-                const desc = document.createElement("div");
-                desc.style.marginTop = "6px";
-                desc.textContent = t.title;
-                card.appendChild(desc);
-            });
-        });
-    },
-
-    openSettings() {
-        this.openModal("Настройки и сводка", (body) => {
-            const armyCard = this.createCard(body);
-            armyCard.textContent = "Армия: Витязи — " + (state.army.vityazi || 0);
-            const provCard = this.createCard(body);
-            provCard.textContent =
-                "Стартовый провиант: " + state.provant.starting_supply +
-                " | Из амбаров: " + state.provant.from_barns;
-            this.createButton(body, "Выйти в главное меню", () => location.reload());
-        });
-    },
-
-    openLocationModal(loc) {
-        if (!loc.scouted && loc.owner !== "player") {
-            if (!isAdjacentToVisible(loc)) return;
-            const cost = getScoutCost(loc);
-            this.openModal("Неизвестная территория", (body) => {
-                const info = this.createCard(body);
-                info.textContent = "Стоимость разведки: " + cost + " провианта (круг " + getRingFromStart(loc) + ").";
-                this.createButton(
-                    body,
-                    "🔍 Разведать (" + cost + " пров.)",
-                    () => Game.scoutLocation(loc.index),
-                    "primary"
+                const warehouse = state.currentForestLoc.forestData.lowerWarehouses.find(
+                    w => w.built && w.storedType === item.id && w.amount < CONFIG.forest.warehouseCapacity
                 );
-            });
-            return;
-        }
+                const hasWarehouse = !!warehouse;
+                desc.textContent =
+                    `Осталось запасов: ${item.amount} / ${CONFIG.forest.amountPerSquare} ед.\n` +
+                    `Крестьян занято: ${item.hasPeasant ? '1' : '0'}.\n` +
+                    (hasWarehouse
+                        ? `Склад: ${warehouse.amount} / ${CONFIG.forest.warehouseCapacity} ед.`
+                        : `⚠️ Нет склада под «${item.name}». Постройте в нижнем поле.`);
 
-        this.openModal(loc.name, (body) => {
-            const statusCard = this.createCard(body);
-            statusCard.textContent = "Статус: " + loc.owner + " | Круг от села: " + getRingFromStart(loc);
-
-            const resKeys = Object.keys(loc.storage || {});
-            if (resKeys.length > 0) {
-                const stCard = this.createCard(body);
-                stCard.textContent = "Склад: " + resKeys.map((k) => k + ": " + loc.storage[k]).join(", ");
-            }
-
-            if (loc.owner === "none") {
-                this.createButton(body, "🚩 Занять локацию", () => Game.claimLocation(loc.index), "primary");
-            } else if (loc.id === "city" && loc.owner === "neutral") {
-                const cCard = this.createCard(body);
-                cCard.textContent = "Горожане напуганы. Захватите лагерь бандитов, чтобы присоединить город.";
-            } else if (loc.id === "bandits" && loc.owner === "hostile") {
-                this.createButton(
-                    body,
-                    "⚔️ Атаковать бандитов (Витязи: " + (state.army.vityazi || 0) + ")",
-                    () => Game.claimLocation(loc.index),
-                    "primary",
-                    "#9e3b33"
-                );
-            }
-
-            if (loc.construction) {
-                const c = loc.construction;
-                const cCard = this.createCard(body);
-                const title = document.createElement("b");
-                title.textContent = "Стройка: " + c.name;
-                cCard.appendChild(title);
-                cCard.appendChild(document.createTextNode(
-                    " (" + c.currentAmount + "/" + c.reqAmount + " " + c.reqRes + ")"
-                ));
-                cCard.appendChild(document.createElement("br"));
-                if (c.done) {
-                    const badge = document.createElement("span");
-                    badge.className = "badge done";
-                    badge.textContent = "Построено";
-                    cCard.appendChild(badge);
+                if (!item.hasPeasant) {
+                    addBtn(btns, '👨‍🌾 Отправить добывать',
+                        () => togglePeasantOnSquare(item, true),
+                        getFreePeasants() > 0 && hasWarehouse);
                 } else {
-                    const btnText = c.active
-                        ? "Стройка активна (проведите пальцем от источника к селу)"
-                        : "Активировать стройку";
-                    this.createButton(cCard, btnText, () => this.toggleConstruction(loc.index), "primary");
+                    addBtn(btns, '🛑 Отозвать крестьянина',
+                        () => togglePeasantOnSquare(item, false), true);
                 }
             }
+        }
+    } else if (type === 'lower') {
+        const builtCount = state.currentForestLoc.forestData.lowerWarehouses.filter(w => w.built).length;
 
-            if (loc.id === "field" && loc.owner === "player" && loc.barn && !loc.barn.done) {
-                const bCard = this.createCard(body);
-                bCard.textContent = "Амбар поля: " + loc.barn.current + "/" + loc.barn.max + " ржи";
-                this.createButton(bCard, "🌾 Собрать урожай (+50 ржи)", () => this.gatherHarvestTest(loc.index), "primary");
-            }
-
-            const activeRoutes = state.routes.filter((r) => r.toIdx === loc.index || r.fromIdx === loc.index);
-            if (activeRoutes.length > 0) {
-                const rCard = this.createCard(body);
-                const rTitle = document.createElement("b");
-                rTitle.textContent = "Активные маршруты:";
-                rCard.appendChild(rTitle);
-                activeRoutes.forEach((r) => {
-                    const src = state.locations[r.fromIdx];
-                    const dst = state.locations[r.toIdx];
-                    const row = document.createElement("div");
-                    row.style.marginTop = "6px";
-                    row.style.fontSize = "12px";
-                    row.textContent =
-                        (src ? src.name : "?") + " → " + (dst ? dst.name : "?") +
-                        " (" + r.delivered + "/" + r.amountTotal + ", в пути: " + r.inTransit + ")";
-                    const cancelBtn = this.createButton(row, "Отменить маршрут", () => {
-                        Game.cancelRoute(r.id);
-                        this.openLocationModal(loc);
-                    }, "", "#9e3b33");
-                    cancelBtn.style.marginTop = "4px";
-                    rCard.appendChild(row);
-                });
-            }
-
-            if (loc.buildings.length > 0 && loc.owner === "player") {
-                const bList = this.createCard(body);
-                const bh = document.createElement("b");
-                bh.textContent = "Постройки локации:";
-                bList.appendChild(bh);
-                bList.appendChild(document.createElement("br"));
-                const span = document.createElement("span");
-                span.style.fontSize = "12px";
-                span.style.color = "#a89b84";
-                span.textContent = loc.buildings.join(", ");
-                bList.appendChild(span);
-            }
-        });
-    },
-
-    toggleConstruction(locIdx) {
-        const loc = state.locations[locIdx];
-        if (!loc || !loc.construction) return;
-        loc.construction.active = !loc.construction.active;
-        this.renderMap();
-        if (loc.construction.active) {
-            notify("Проведите пальцем от локации-источника к «" + loc.name + "»");
-            this.closeAllModals();
+        if (!item.built) {
+            const cost = CONFIG.forest.warehouseCosts[builtCount] || 22;
+            const have = getWoodTotal();
+            title.textContent = 'Пустой слот под склад';
+            desc.textContent =
+                `Построить лесной склад для координации добычи?\n` +
+                `Стоимость: ${cost} 🪵.\nВсего древесины: ${have} 🪵.`;
+            addBtn(btns, `🪵 Построить склад (${cost} 🪵)`,
+                () => buildForestWarehouse(item, cost), have >= cost);
         } else {
-            this.openLocationModal(loc);
+            title.textContent = 'Лесной склад';
+            const resName = item.storedType === 'wood' ? 'Древесина' : 'Пусто';
+            desc.textContent =
+                `Тип хранения: ${resName}.\n` +
+                `Заполнено: ${item.amount} / ${CONFIG.forest.warehouseCapacity} ед.`;
+            if (item.storedType !== 'wood') {
+                addBtn(btns, '📦 Хранить 🪵 Древесину',
+                    () => changeWarehouseResource(item, 'wood'), true);
+            }
+            if (item.storedType !== 'none') {
+                addBtn(btns, '🗑️ Сбросить фильтр склада',
+                    () => changeWarehouseResource(item, 'none'), true);
+            }
         }
-    },
-
-    gatherHarvestTest(locIdx) {
-        const loc = state.locations[locIdx];
-        if (!loc || !loc.barn) return;
-        loc.barn.current = Math.min(100, loc.barn.current + 50);
-        state.provant.from_barns += 50;
-        if (loc.barn.current >= 100) {
-            loc.barn.done = true;
-            state.tasks.harvest.done = true;
-            notify("Склад заполнен (100/100)");
-            notify("Задание выполнено");
-            this.updateTaskBanner();
-        }
-        this.openLocationModal(loc);
-    },
-
-    openRouteCreator(fromLoc, toLoc) {
-        if (!toLoc.construction) return;
-        const keys = Object.keys(fromLoc.storage || {}).filter((k) => fromLoc.storage[k] > 0);
-        if (keys.length === 0) {
-            notify("На складе источника нет ресурсов!");
-            return;
-        }
-        const targetName = toLoc.construction.name;
-        this.openModal("Создание маршрута", (body) => {
-            const info = this.createCard(body);
-            info.textContent = "Откуда: " + fromLoc.name + " → Куда: " + toLoc.name + " (" + targetName + ")";
-            keys.forEach((res) => {
-                this.createButton(
-                    body,
-                    "🚚 Возить: " + res + " (на складе: " + fromLoc.storage[res] + ")",
-                    () => {
-                        Game.createRoute(fromLoc.index, toLoc.index, res);
-                        this.closeAllModals();
-                    },
-                    "primary"
-                );
-            });
-        });
     }
-};
 
-// ============================================================================
-// ЖЕСТЫ
-// ============================================================================
-const Gestures = {
-    inited: false,
-    pointers: new Map(),
-    dragFromLoc: null,
-    tempLine: null,
-    startX: 0,
-    startY: 0,
-    panX: 0,
-    panY: 0,
-    zoom: 1,
-    lastPinchDist: 0,
-    wasDragging: false,
+    document.getElementById('action-panel').classList.add('open');
+}
 
-    init() {
-        if (this.inited) return;
-        this.inited = true;
+function unlockForestSquare(tile) {
+    if (!spendProvant(CONFIG.forest.unlockCostProvant)) return;
+    tile.scouted = true;
+    renderForestScreen(state.currentForestLoc);
+    onForestUpperClick(tile);
+}
 
-        const viewport = document.getElementById("map-viewport");
-        const grid = document.getElementById("map-grid");
-        const svg = document.getElementById("route-overlay");
-        if (!viewport || !grid || !svg) return;
-
-        const applyTransform = () => {
-            grid.style.transform = "translate(" + this.panX + "px, " + this.panY + "px) scale(" + this.zoom + ")";
-            UI.renderActiveRouteLines();
-        };
-
-        viewport.addEventListener("wheel", (e) => {
-            e.preventDefault();
-            const factor = e.deltaY < 0 ? 1.08 : 0.92;
-            this.zoom = Math.min(1.8, Math.max(0.75, this.zoom * factor));
-            applyTransform();
-        }, { passive: false });
-
-        viewport.addEventListener("pointerdown", (e) => {
-            this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            this.wasDragging = false;
-
-            if (this.pointers.size === 1) {
-                this.startX = e.clientX;
-                this.startY = e.clientY;
-                const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-                const locEl = targetEl ? targetEl.closest(".loc") : null;
-                const hasActiveConstruction = state.locations.some((l) => l.construction && l.construction.active);
-                if (locEl && hasActiveConstruction) {
-                    const idx = Number(locEl.dataset.locIndex);
-                    const loc = state.locations[idx];
-                    if (loc && loc.owner === "player") {
-                        this.dragFromLoc = loc;
-                        const vpRect = viewport.getBoundingClientRect();
-                        const lRect = locEl.getBoundingClientRect();
-                        const line = document.createElementNS(SVG_NS, "line");
-                        line.setAttribute("x1", String(lRect.left - vpRect.left + lRect.width / 2));
-                        line.setAttribute("y1", String(lRect.top - vpRect.top + lRect.height / 2));
-                        line.setAttribute("x2", String(e.clientX - vpRect.left));
-                        line.setAttribute("y2", String(e.clientY - vpRect.top));
-                        line.setAttribute("stroke", "#fbc531");
-                        line.setAttribute("stroke-width", "4");
-                        svg.appendChild(line);
-                        this.tempLine = line;
-                    }
-                }
-            } else if (this.pointers.size === 2) {
-                if (this.tempLine) {
-                    this.tempLine.remove();
-                    this.tempLine = null;
-                }
-                this.dragFromLoc = null;
-                const pts = Array.from(this.pointers.values());
-                const p0 = pts[0];
-                const p1 = pts[1];
-                if (p0 && p1) this.lastPinchDist = Math.hypot(p0.x - p1.x, p0.y - p1.y);
-            }
-        });
-
-        viewport.addEventListener("pointermove", (e) => {
-            if (!this.pointers.has(e.pointerId)) return;
-            this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-            if (this.pointers.size === 2) {
-                const pts = Array.from(this.pointers.values());
-                const p0 = pts[0];
-                const p1 = pts[1];
-                if (p0 && p1) {
-                    const dist = Math.hypot(p0.x - p1.x, p0.y - p1.y);
-                    if (this.lastPinchDist > 0) {
-                        this.zoom = Math.min(1.8, Math.max(0.75, this.zoom * (dist / this.lastPinchDist)));
-                        applyTransform();
-                    }
-                    this.lastPinchDist = dist;
-                }
-                return;
-            }
-
-            if (Math.hypot(e.clientX - this.startX, e.clientY - this.startY) > 10) {
-                this.wasDragging = true;
-            }
-
-            if (this.dragFromLoc && this.tempLine) {
-                const vpRect = viewport.getBoundingClientRect();
-                this.tempLine.setAttribute("x2", String(e.clientX - vpRect.left));
-                this.tempLine.setAttribute("y2", String(e.clientY - vpRect.top));
-            } else if (this.pointers.size === 1 && this.wasDragging) {
-                this.panX += e.clientX - this.startX;
-                this.panY += e.clientY - this.startY;
-                this.startX = e.clientX;
-                this.startY = e.clientY;
-                applyTransform();
-            }
-        });
-
-        const onEnd = (e) => {
-            if (this.tempLine) {
-                this.tempLine.remove();
-                this.tempLine = null;
-            }
-            const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-            const locEl = targetEl ? targetEl.closest(".loc") : null;
-
-            if (this.dragFromLoc && this.wasDragging && locEl) {
-                const toIdx = Number(locEl.dataset.locIndex);
-                const toLoc = state.locations[toIdx];
-                if (toLoc && toLoc.index !== this.dragFromLoc.index && toLoc.construction && toLoc.construction.active) {
-                    UI.openRouteCreator(this.dragFromLoc, toLoc);
-                }
-            }
-
-            this.dragFromLoc = null;
-            this.pointers.delete(e.pointerId);
-            if (this.pointers.size < 2) this.lastPinchDist = 0;
-            setTimeout(() => { this.wasDragging = false; }, 50);
-        };
-
-        viewport.addEventListener("pointerup", onEnd);
-        viewport.addEventListener("pointercancel", onEnd);
+function togglePeasantOnSquare(tile, activate) {
+    if (activate) {
+        if (getFreePeasants() <= 0) return;
+        tile.hasPeasant = true;
+    } else {
+        tile.hasPeasant = false;
     }
-};
+    renderResources();
+    renderForestScreen(state.currentForestLoc);
+    onForestUpperClick(tile);
+}
 
-// ============================================================================
-// ПОДКЛЮЧЕНИЕ КНОПОК
-// ============================================================================
-function bindButtons() {
-    const on = (id, handler) => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener("click", handler);
+function buildForestWarehouse(warehouse, cost) {
+    const loc = state.currentForestLoc;
+    if (!loc) return;
+    if (!spendGlobalWood(cost)) return;
+    warehouse.built = true;
+    warehouse.storedType = 'none';
+    warehouse.amount = 0;
+    renderResources();
+    renderForestScreen(loc);
+    onForestLowerClick(warehouse);
+}
+
+function changeWarehouseResource(warehouse, newTypeId) {
+    if (warehouse.amount > 0) {
+        if (!confirm('На складе есть запасы. При смене типа хранения они удалятся безвозвратно. Продолжить?')) return;
+    }
+    warehouse.storedType = newTypeId;
+    warehouse.amount = 0;
+    renderForestScreen(state.currentForestLoc);
+    onForestLowerClick(warehouse);
+}
+
+// ============================================================
+// ПОЛЕ
+// ============================================================
+function openFieldScreen(loc) {
+    state.currentFieldLoc = loc;
+    showScreen('field-screen');
+    renderFieldScreen(loc);
+}
+
+function renderFieldScreen(loc) {
+    if (!loc || !loc.fieldData) return;
+
+    const grid = document.getElementById('field-grid');
+    grid.innerHTML = '';
+    loc.fieldData.squares.forEach(sq => {
+        const div = document.createElement('div');
+        div.className = 'field-tile';
+
+        if (!sq.planted) {
+            div.classList.add('empty');
+            div.innerHTML = `<span class="tile-icon">·</span>`;
+        } else if (sq.ready) {
+            div.classList.add('ready');
+            const plant = PLANTS[sq.planted];
+            div.innerHTML = `<span class="tile-icon">${plant.icon}</span>`;
+        } else {
+            div.classList.add('growing');
+            const plant = PLANTS[sq.planted];
+            const elapsed = (Date.now() - sq.plantedAt) / 1000;
+            const pct = Math.max(0, Math.min(100, (elapsed / CONFIG.field.growthTimeSec) * 100));
+            div.innerHTML = `
+                <div class="growth-bar"><span style="width:${pct}%"></span></div>
+                <span class="tile-icon">${plant.icon}</span>
+            `;
+        }
+        div.addEventListener('click', () => onFieldTileClick(sq));
+        grid.appendChild(div);
+    });
+
+    const seedsList = document.getElementById('seeds-list');
+    seedsList.innerHTML = '';
+    Object.values(PLANTS).forEach(plant => {
+        const count = state.seeds[plant.id] || 0;
+        const item = document.createElement('div');
+        item.className = 'seed-item';
+        if (state.selectedSeedType === plant.id) item.classList.add('selected');
+        if (count < CONFIG.field.seedsPerSquare) item.classList.add('empty');
+        item.innerHTML = `
+            <span class="seed-icon">${plant.icon}</span>
+            <span class="seed-name">${plant.name}</span>
+            <span class="seed-count">${count}</span>
+        `;
+        item.addEventListener('click', () => {
+            state.selectedSeedType = plant.id;
+            renderFieldScreen(loc);
+        });
+        seedsList.appendChild(item);
+    });
+
+    const barnsGrid = document.getElementById('barns-grid');
+    barnsGrid.innerHTML = '';
+    loc.fieldData.barns.forEach(b => {
+        const div = document.createElement('div');
+        div.className = 'barn-tile';
+        if (!b.built) {
+            div.innerHTML = `<span class="tile-icon">➕</span>`;
+        } else {
+            div.classList.add('built');
+            const plant = PLANTS[b.plantType];
+            const icon = plant ? plant.icon : '⬜';
+            div.innerHTML = `
+                <span class="tile-icon">🏠</span>
+                <span class="tile-badge">${icon}:${b.amount}</span>
+            `;
+        }
+        div.addEventListener('click', () => onBarnClick(b));
+        barnsGrid.appendChild(div);
+    });
+}
+
+function onFieldTileClick(sq) {
+    if (state.gameOver || !state.currentFieldLoc) return;
+    const loc = state.currentFieldLoc;
+
+    if (sq.planted && sq.ready) { tryHarvest(loc, sq); return; }
+    if (sq.planted && !sq.ready) {
+        if (!confirm('На этом квадрате уже растёт растение. Пересадить? Затраченные семена не вернутся.')) return;
+        sq.planted = null; sq.plantedAt = 0; sq.ready = false;
+        plantOnSquare(loc, sq);
+        return;
+    }
+    plantOnSquare(loc, sq);
+}
+
+function plantOnSquare(loc, sq) {
+    const plantId = state.selectedSeedType;
+    const seeds = state.seeds[plantId] || 0;
+    const cost = CONFIG.field.seedsPerSquare;
+
+    if (seeds < cost) {
+        notify(`Недостаточно семян ${PLANTS[plantId].name} (нужно ${cost}, есть ${seeds})`, 'warn');
+        return;
+    }
+    state.seeds[plantId] -= cost;
+    sq.planted = plantId;
+    sq.plantedAt = Date.now();
+    sq.ready = false;
+    renderFieldScreen(loc);
+}
+
+function tryHarvest(loc, sq) {
+    const plantId = sq.planted;
+    const barn = loc.fieldData.barns.find(
+        b => b.built && b.plantType === plantId && b.amount < CONFIG.field.barnCapacity
+    );
+    if (!barn) {
+        notify('Нет амбара с местом под это растение. Освободите место.', 'warn');
+        return;
+    }
+    const yieldAmount = Math.min(CONFIG.field.yieldPerSquare, CONFIG.field.barnCapacity - barn.amount);
+    barn.amount += yieldAmount;
+
+    const leftover = CONFIG.field.yieldPerSquare - yieldAmount;
+    if (leftover > 0) {
+        notify(`Амбар заполнен! Собрано ${yieldAmount}, осталось ${leftover} на квадрате.`, 'warn');
+        return;
+    }
+    sq.planted = null; sq.plantedAt = 0; sq.ready = false;
+    renderFieldScreen(loc);
+    checkBarnTask();
+}
+
+function onBarnClick(b) {
+    if (state.gameOver || !state.currentFieldLoc) return;
+    state.selectedFieldTile = { type: 'barn', data: b };
+    refreshFieldActionPanel(state.currentFieldLoc);
+}
+
+function refreshFieldActionPanel(loc) {
+    const sel = state.selectedFieldTile;
+    if (!sel) return;
+    const b = sel.data;
+    const btns = document.getElementById('action-buttons');
+    const title = document.getElementById('action-title');
+    const desc = document.getElementById('action-desc');
+    btns.innerHTML = '';
+
+    if (!b.built) {
+        const builtCount = loc.fieldData.barns.filter(x => x.built).length;
+        const cost = CONFIG.field.barnCosts[builtCount] || 22;
+        const have = getWoodTotal();
+        title.textContent = 'Пустой слот под амбар';
+        desc.textContent = `Построить амбар?\nСтоимость: ${cost} 🪵.\nВсего древесины: ${have} 🪵.`;
+        addBtn(btns, `🪵 Построить амбар (${cost} 🪵)`, () => buildBarn(b, cost), have >= cost);
+    } else {
+        title.textContent = 'Амбар';
+        const plantName = b.plantType === 'rye' ? 'Рожь' : 'Пусто';
+        desc.textContent = `Растение: ${plantName}.\nЗаполнено: ${b.amount}/${CONFIG.field.barnCapacity}.`;
+
+        if (b.plantType !== 'rye') addBtn(btns, '📦 Хранить 🌾 Рожь', () => changeBarnPlant(b, 'rye'), true);
+        if (b.plantType !== 'none') addBtn(btns, '🗑️ Сбросить (Пусто)', () => changeBarnPlant(b, 'none'), true);
+
+        if (b.plantType === 'rye' && b.amount > 0) {
+            const step = Math.min(CONFIG.field.seedsPerSquare, b.amount);
+            addBtn(btns, `🌱 Взять ${step} семян из амбара`, () => {
+                const take = Math.min(CONFIG.field.seedsPerSquare, b.amount);
+                b.amount -= take; state.seeds.rye += take;
+                renderFieldScreen(loc); onBarnClick(b); renderResources();
+            }, true);
+        }
+        if (b.plantType === 'rye') {
+            const freeSpace = CONFIG.field.barnCapacity - b.amount;
+            const back = Math.min(CONFIG.field.seedsPerSquare, state.seeds.rye, freeSpace);
+            if (back > 0) {
+                addBtn(btns, `↩️ Вернуть ${back} семян в амбар`, () => {
+                    const put = Math.min(CONFIG.field.seedsPerSquare, state.seeds.rye, CONFIG.field.barnCapacity - b.amount);
+                    state.seeds.rye -= put; b.amount += put;
+                    renderFieldScreen(loc); onBarnClick(b); renderResources();
+                }, true);
+            }
+        }
+    }
+    document.getElementById('action-panel').classList.add('open');
+}
+
+function buildBarn(b, cost) {
+    const loc = state.currentFieldLoc;
+    if (!loc) return;
+    if (!spendGlobalWood(cost)) return;
+    b.built = true; b.plantType = 'none'; b.amount = 0;
+    renderResources();
+    renderFieldScreen(loc);
+    onBarnClick(b);
+}
+
+function changeBarnPlant(b, newType) {
+    if (b.amount > 0) {
+        if (!confirm('На амбаре есть запас. При смене растения он удалится безвозвратно. Продолжить?')) return;
+    }
+    b.plantType = newType; b.amount = 0;
+    renderFieldScreen(state.currentFieldLoc);
+    onBarnClick(b);
+}
+
+// ============================================================
+// ЛАГЕРЬ БАНДИТОВ
+// ============================================================
+function openBanditScreen(loc) {
+    state.currentBanditLoc = loc;
+    showScreen('bandit-screen');
+    renderBanditScreen(loc);
+}
+
+function renderBanditScreen(loc) {
+    if (!loc) return;
+    const desc = document.getElementById('bandit-desc');
+    const stats = document.getElementById('bandit-stats');
+    const actions = document.getElementById('bandit-actions');
+    actions.innerHTML = '';
+
+    if (loc.banditsDefeated) {
+        desc.textContent = 'Лагерь бандитов разгромлен. Город готов присоединиться.';
+        stats.innerHTML = '';
+        addBtn(actions, '⬅ На карту', () => backToMapFromBandit(), true);
+        return;
+    }
+
+    desc.textContent = 'Горожане напуганы. Победите бандитов, чтобы город присоединился.';
+    stats.innerHTML =
+        `<p>🏴‍☠️ Бандитов: ${CONFIG.bandits.count} × ${CONFIG.bandits.hpEach} HP, атака ${CONFIG.bandits.atk}</p>` +
+        `<p>⚔️ Ваши витязи: ${state.army.vityaz} × ${CONFIG.vityaz.hp} HP, атака ${CONFIG.vityaz.atk}</p>`;
+
+    const canFight = state.army.vityaz > 0;
+    addBtn(actions, '⚔️ Начать бой', () => startBattle(loc, 'bandit'), canFight);
+    if (!canFight) {
+        addBtn(actions, '⚠️ Нет армии — наймите в тереме', () => {}, false);
+    }
+    addBtn(actions, '⬅ На карту', () => backToMapFromBandit(), true);
+}
+
+function backToMapFromBandit() {
+    state.currentBanditLoc = null;
+    showScreen('map-screen');
+    renderMap();
+}
+
+// ============================================================
+// БОЙ
+// ============================================================
+function startBattle(targetLoc, kind) {
+    const enemyCount = kind === 'bandit' ? CONFIG.bandits.count : CONFIG.raid.count;
+    const enemyHp = kind === 'bandit' ? CONFIG.bandits.hpEach : CONFIG.raid.hpEach;
+    const enemyAtk = kind === 'bandit' ? CONFIG.bandits.atk : CONFIG.raid.atk;
+
+    state.battle = {
+        kind,
+        targetLocIndex: targetLoc ? targetLoc.index : null,
+        playerUnits: [{ name: 'Витязь', icon: '⚔️', count: state.army.vityaz, hp: CONFIG.vityaz.hp, atk: CONFIG.vityaz.atk }],
+        enemyUnits: [{ name: kind === 'bandit' ? 'Бандит' : 'Налётчик', icon: kind === 'bandit' ? '🏴‍☠️' : '🏹', count: enemyCount, hp: enemyHp, atk: enemyAtk }],
+        log: [],
+        finished: false,
+        victory: false
     };
-    on("btn-start", () => Game.startMission());
-    on("btn-map", () => UI.closeAllModals());
-    on("btn-tasks", () => UI.openTasks());
-    on("btn-settings", () => UI.openSettings());
-    on("btn-close-modal", () => UI.closeAllModals());
+
+    showScreen('battle-screen');
+    renderBattleScreen();
+
+    const actions = document.getElementById('battle-actions');
+    actions.innerHTML = '';
+    addBtn(actions, '⚔️ Раунд боя', () => battleRound(), true);
 }
 
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bindButtons);
-} else {
-    bindButtons();
+function renderBattleScreen() {
+    const b = state.battle;
+    if (!b) return;
+
+    document.getElementById('battle-title').textContent =
+        b.kind === 'bandit' ? 'Бой с бандитами' : 'Отражение набега';
+
+    const pBox = document.getElementById('battle-player-units');
+    const eBox = document.getElementById('battle-enemy-units');
+    pBox.innerHTML = '';
+    eBox.innerHTML = '';
+
+    b.playerUnits.forEach(u => {
+        const div = document.createElement('div');
+        div.className = 'battle-unit';
+        div.innerHTML = `<span class="bu-icon">${u.icon}</span><span class="bu-name">${u.name}</span><span class="bu-hp">×${u.count} (${u.hp} HP)</span>`;
+        pBox.appendChild(div);
+    });
+    b.enemyUnits.forEach(u => {
+        const div = document.createElement('div');
+        div.className = 'battle-unit';
+        div.innerHTML = `<span class="bu-icon">${u.icon}</span><span class="bu-name">${u.name}</span><span class="bu-hp">×${u.count} (${u.hp} HP)</span>`;
+        eBox.appendChild(div);
+    });
+
+    const log = document.getElementById('battle-log');
+    log.innerHTML = b.log.map(line => `<p>${line}</p>`).join('');
+    log.scrollTop = log.scrollHeight;
 }
 
-// для отладки в консоли
-window.Game = Game;
-window.UI = UI;
-window.Gestures = Gestures;
+function battleRound() {
+    const b = state.battle;
+    if (!b || b.finished) return;
+
+    // Игрок бьёт
+    attackPhase(b.playerUnits, b.enemyUnits, 'Вы');
+    if (totalCount(b.enemyUnits) <= 0) { finishBattle(true); return; }
+
+    // Враг бьёт
+    attackPhase(b.enemyUnits, b.playerUnits, 'Противник');
+    if (totalCount(b.playerUnits) <= 0) { finishBattle(false); return; }
+
+    renderBattleScreen();
+}
+
+function attackPhase(attackers, defenders, who) {
+    const totalAtk = attackers.reduce((s, u) => s + u.atk * u.count, 0);
+    if (totalAtk <= 0) return;
+    let remaining = totalAtk;
+    const b = state.battle;
+
+    for (const def of defenders) {
+        if (remaining <= 0) break;
+        if (def.count <= 0) continue;
+
+        const dmgPerUnit = Math.min(def.hp, remaining);
+        const unitsKilled = Math.min(def.count, Math.floor(remaining / def.hp));
+        const leftoverDmg = remaining - unitsKilled * def.hp;
+
+        if (unitsKilled > 0) {
+            def.count -= unitsKilled;
+            remaining -= unitsKilled * def.hp;
+            b.log.push(`${who}: убито ${unitsKilled} ${def.name}(ов)`);
+        }
+        if (def.count > 0 && leftoverDmg > 0) {
+            def.hp -= leftoverDmg;
+            remaining = 0;
+            if (def.hp <= 0) {
+                def.count -= 1;
+                def.hp = def.name === 'Витязь' ? CONFIG.vityaz.hp : (def.icon === '🏴‍☠️' ? CONFIG.bandits.hpEach : CONFIG.raid.hpEach);
+            }
+        }
+    }
+    b.log.push(`${who}: нанесено ${totalAtk} урона`);
+}
+
+function totalCount(units) {
+    return units.reduce((s, u) => s + u.count, 0);
+}
+
+function finishBattle(victory) {
+    const b = state.battle;
+    b.finished = true;
+    b.victory = victory;
+
+    // Сохраняем выживших игрока
+    const survivors = b.playerUnits.reduce((s, u) => s + u.count, 0);
+    state.army.vityaz = survivors;
+
+    const actions = document.getElementById('battle-actions');
+    actions.innerHTML = '';
+
+    if (victory) {
+        if (b.kind === 'bandit') {
+            const loc = state.locations[b.targetLocIndex];
+            if (loc) loc.banditsDefeated = true;
+            state.tasks.defeatBandits = true;
+            state.tasks.prepareRaid = false;
+            notify('Бандиты разгромлены! Город можно присоединить', 'success', 4000);
+            addBtn(actions, '⬅ К карте', () => {
+                state.battle = null;
+                state.currentBanditLoc = null;
+                showScreen('map-screen');
+                renderMap();
+            }, true);
+        } else if (b.kind === 'raid') {
+            state.battle = null;
+            endGame(true, 'Набег отражён! Враг бежит, город под твоей защитой.');
+        }
+    } else {
+        addBtn(actions, '💀 Поражение', () => {
+            state.battle = null;
+            if (b.kind === 'raid') {
+                endGame(false, 'Набег не отражён. Враги разорили город.');
+            } else {
+                showScreen('map-screen');
+                renderMap();
+            }
+        }, true);
+    }
+
+    renderBattleScreen();
+    renderResources();
+}
+
+// ============================================================
+// АРМИЯ (КНЯЖИЙ ТЕРЕМ)
+// ============================================================
+function openArmyScreen(cityLoc) {
+    state.currentArmyLoc = cityLoc;
+    showScreen('army-screen');
+    renderArmyScreen();
+}
+
+function renderArmyScreen() {
+    const info = document.getElementById('army-info');
+    const list = document.getElementById('army-recruit-list');
+    list.innerHTML = '';
+
+    info.innerHTML =
+        `<p>⚔️ Витязей: ${state.army.vityaz}</p>` +
+        `<p>🍞 Провиант: ${getTotalProvant()}</p>` +
+        `<p>Этап: ${state.stage === 5 ? 'подготовка к набегу' : 'развитие города'}</p>`;
+
+    const cost = CONFIG.armyCosts.vityaz;
+    const item = document.createElement('div');
+    item.className = 'construction-item';
+    item.innerHTML = `
+        <span class="ci-name">⚔️ Нанять витязя</span>
+        <span class="ci-cost">${cost.provant} 🍞</span>
+    `;
+    item.addEventListener('click', () => {
+        if (getTotalProvant() < cost.provant) { notify('Недостаточно провианта', 'warn'); return; }
+        spendProvant(cost.provant);
+        state.army.vityaz += 1;
+        state.tasks.prepareRaid = true;
+        notify('Нанят витязь', 'success');
+        renderResources();
+        renderArmyScreen();
+    });
+    list.appendChild(item);
+}
+
+// ============================================================
+// НАБЕГ
+// ============================================================
+function startRaid() {
+    if (state.raidStarted) return;
+    state.raidStarted = true;
+    setStage(6);
+    showScreen('raid-screen');
+
+    const desc = document.getElementById('raid-desc');
+    const stats = document.getElementById('raid-stats');
+    const actions = document.getElementById('raid-actions');
+    actions.innerHTML = '';
+
+    desc.textContent = 'Враги подошли к городу! Отразите набег теми силами, что успели подготовить.';
+    stats.innerHTML =
+        `<p>🏹 Налётчиков: ${CONFIG.raid.count} × ${CONFIG.raid.hpEach} HP, атака ${CONFIG.raid.atk}</p>` +
+        `<p>⚔️ Ваши витязи: ${state.army.vityaz} × ${CONFIG.vityaz.hp} HP, атака ${CONFIG.vityaz.atk}</p>`;
+
+    addBtn(actions, '⚔️ В бой!', () => {
+        const city = state.locations.find(l => l.id === 'city');
+        startBattle(city, 'raid');
+    }, true);
+}
+
+// ============================================================
+// УВЕДОМЛЕНИЯ / МОДАЛКА
+// ============================================================
+function notify(message, kind = '', duration = 3000) {
+    const box = document.getElementById('notifications');
+    if (!box) return;
+    const el = document.createElement('div');
+    el.className = 'notification' + (kind ? ' ' + kind : '');
+    el.textContent = message;
+    box.appendChild(el);
+    setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => el.remove(), 320);
+    }, duration);
+}
+
+function hideNotifications() {
+    const box = document.getElementById('notifications');
+    if (box) box.innerHTML = '';
+}
+
+function openModal(title, htmlText, buttonLabel, onButton) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-text').innerHTML = htmlText;
+    const btn = document.getElementById('modal-btn');
+    btn.textContent = buttonLabel;
+    btn.onclick = onButton;
+    document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('modal').classList.remove('open');
+}
+
+// ============================================================
+// ВСПОМОГАТЕЛЬНЫЕ
+// ============================================================
+function addBtn(container, label, onClick, enabled) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.textContent = label;
+    btn.disabled = !enabled;
+    btn.addEventListener('click', onClick);
+    container.appendChild(btn);
+}
+
+function closeActionPanel() {
+    const panel = document.getElementById('action-panel');
+    if (panel) panel.classList.remove('open');
+    state.selectedLoc = null;
+    state.selectedForestTile = null;
+    state.selectedFieldTile = null;
+}
+
+// ============================================================
+// ЗАВЕРШЕНИЕ ИГРЫ
+// ============================================================
+function endGame(isVictory, message) {
+    state.gameOver = true;
+    stopAllTimers();
+    openModal(
+        isVictory ? 'Победа!' : 'Поражение',
+        `<p>${message}</p>`,
+        isVictory ? 'Отлично' : 'Перезапустить',
+        () => {
+            closeModal();
+            showScreen('main-menu');
+            if (!isVictory) initState();
+        }
+    );
+}
+
+// ============================================================
+// ОБРАБОТЧИКИ
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+    // Главное меню
+    document.querySelectorAll('#era-list .menu-item').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelectorAll('#era-list .menu-item').forEach(x => x.classList.remove('selected'));
+            el.classList.add('selected');
+        });
+    });
+    document.querySelectorAll('#region-list .menu-item').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelectorAll('#region-list .menu-item').forEach(x => x.classList.remove('selected'));
+            el.classList.add('selected');
+        });
+    });
+    document.querySelectorAll('#mission-list .menu-item').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelectorAll('#mission-list .menu-item').forEach(x => x.classList.remove('selected'));
+            el.classList.add('selected');
+        });
+    });
+    document.getElementById('btn-open-briefing').addEventListener('click', () => showScreen('briefing'));
+    document.getElementById('btn-start').addEventListener('click', startMission);
+
+    // Возвраты
+    document.getElementById('btn-back-to-map').addEventListener('click', backToGlobalMap);
+
+    document.getElementById('btn-village-back').addEventListener('click', () => {
+        state.currentVillageLoc = null;
+        closeActionPanel();
+        showScreen('map-screen');
+        renderMap();
+    });
+
+    document.getElementById('btn-city-back').addEventListener('click', () => {
+        state.currentCityLoc = null;
+        showScreen('map-screen');
+        renderMap();
+    });
+
+    document.getElementById('btn-field-back').addEventListener('click', () => {
+        state.currentFieldLoc = null;
+        state.selectedFieldTile = null;
+        closeActionPanel();
+        showScreen('map-screen');
+        renderMap();
+    });
+
+    document.getElementById('btn-bandit-back').addEventListener('click', backToMapFromBandit);
+
+    document.getElementById('btn-army-back').addEventListener('click', () => {
+        if (state.currentCityLoc) { showScreen('city-screen'); renderCityScreen(state.currentCityLoc); }
+        else { showScreen('map-screen'); renderMap(); }
+    });
+
+    document.getElementById('btn-cancel-action').addEventListener('click', closeActionPanel);
+
+    // Нижняя панель
+    document.getElementById('btn-nav-map').addEventListener('click', () => {
+        closeActionPanel();
+        state.currentForestLoc = null;
+        state.currentCityLoc = null;
+        state.currentVillageLoc = null;
+        state.currentFieldLoc = null;
+        state.currentBanditLoc = null;
+        showScreen('map-screen');
+        renderMap();
+    });
+
+    document.getElementById('btn-nav-tasks').addEventListener('click', () => {
+        openTaskDialog(null);
+    });
+
+    document.getElementById('btn-nav-army').addEventListener('click', () => {
+        const city = state.locations.find(l => l.id === 'city');
+        if (city && city.joinedCity) openArmyScreen(city);
+        else notify('Армия доступна после присоединения города', 'warn');
+    });
+
+    document.getElementById('btn-nav-settings').addEventListener('click', () => {
+        notify('Настройки будут доступны позже', 'warn');
+    });
+
+    document.getElementById('modal').addEventListener('click', (e) => {
+        if (e.target.id === 'modal') closeModal();
+    });
+});

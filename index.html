@@ -2,97 +2,317 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Хроники Державы</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Историческая игра — Миссия 1: От села до набега</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- 1.1 ГЛАВНОЕ МЕНЮ -->
-<div id="menu-screen" class="screen active">
-    <div class="menu-box">
-        <h1>ХРОНИКИ ДЕРЖАВЫ</h1>
-        <div class="select-group">
-            <label for="era-select">Эпоха</label>
-            <select id="era-select">
-                <option value="0">Киевская Русь</option>
-                <option value="1" disabled>Российская Империя (в разработке)</option>
-                <option value="2" disabled>СССР (в разработке)</option>
-            </select>
+<div id="app">
+
+    <!-- ============================================================
+         HUD (верхняя панель) — п.10.1 «Общих правил»
+         ============================================================ -->
+    <header id="hud" aria-label="Панель ресурсов">
+        <div class="hud-res">
+            <span title="Провиант (стартовый запас + рожь в амбарах)">🍞 <b id="r-provant">0</b></span>
+            <span title="Древесина (стартовая + суммарно по складам)">🪵 <b id="r-wood">0</b></span>
+            <span title="Крестьяне (свободные / всего)">👨‍🌾 <b id="r-peasants">0 / 0</b></span>
+            <span title="Витязи (армия)">⚔️ <b id="r-army">0</b></span>
         </div>
-        <div class="select-group">
-            <label for="region-select">Регион</label>
-            <select id="region-select">
-                <option value="rus_region_1">Полянская земля</option>
-            </select>
+        <div class="hud-specials">
+            <span title="Патернализм">🤝 <b id="r-paternalism">50</b>%</span>
+            <span title="Пассионарность">🔥 <b id="r-passionarity">50</b>%</span>
+            <span title="Таймер этапа">⏱ <b id="r-timer">--:--</b></span>
         </div>
-        <div class="select-group">
-            <label for="mission-select">Миссия</label>
-            <select id="mission-select">
-                <option value="mission_1">Глава 1: От села до рати</option>
-            </select>
-        </div>
-        <button class="primary" id="btn-start">Начать миссию</button>
+    </header>
+
+    <!-- Полоса патернализма -->
+    <div id="paternalism-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+        <div id="paternalism-fill"></div>
     </div>
+
+    <!-- Контейнер всплывающих уведомлений (п.10.3) -->
+    <div id="notifications" aria-live="polite" aria-atomic="false"></div>
+
+    <!-- ============================================================
+         ЭКРАН 0: ГЛАВНОЕ МЕНЮ (п.1.1)
+         ============================================================ -->
+    <section class="screen active" id="main-menu" aria-label="Главное меню">
+        <h1>Историческая игра</h1>
+        <p class="menu-sub">Выбор эпохи</p>
+        <div class="menu-list" id="era-list">
+            <button class="menu-item selected" data-era="0" type="button">🛡️ Киевская Русь</button>
+            <button class="menu-item" data-era="1" type="button">🏰 Империя</button>
+            <button class="menu-item" data-era="2" type="button">⚙️ СССР</button>
+        </div>
+        <p class="menu-sub">Регион</p>
+        <div class="menu-list" id="region-list">
+            <button class="menu-item selected" data-region="rus_region_1" type="button">🌲 Регион 1 — Лесной край</button>
+        </div>
+        <p class="menu-sub">Миссия</p>
+        <div class="menu-list" id="mission-list">
+            <button class="menu-item selected" data-mission="mission_1" type="button">📜 Миссия 1: Земля предков</button>
+        </div>
+        <button class="btn btn-primary" id="btn-open-briefing" type="button">Далее</button>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 1: БРИФИНГ
+         ============================================================ -->
+    <section class="screen" id="briefing" aria-label="Брифинг миссии">
+        <h1>Миссия 1: Земля предков</h1>
+        <p>Ты — воевода, которому поручено основать поселение на диких землях. Вокруг — лес, поле и село, но они под туманом войны.</p>
+        <p>Начни с села: построй частокол и заполни амбар ржи. Затем разведай окрестности, найди город, победи бандитов и подготовься к набегу.</p>
+        <div class="tasks-preview">
+            <b>Этапы миссии:</b><br>
+            1. Село — частокол (150 🪵) и амбар ржи ×100<br>
+            2. Разведка — найти город<br>
+            3. Присоединение города — победить бандитов<br>
+            4. Развитие города<br>
+            5. Подготовка к набегу (10 мин)<br>
+            6. Отражение набега<br>
+            <span class="tasks-hint">
+                На старте: 5 крестьян, 10 🪵, 20 🍞, 1 витязь.
+                Древесину из леса доставляй в село маршрутом — тапни по частоколу и выбери источник.
+            </span>
+        </div>
+        <button class="btn btn-primary" id="btn-start" type="button">Начать</button>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 2: ГЛОБАЛЬНАЯ КАРТА МИССИИ (п.1.3)
+         ============================================================ -->
+    <section class="screen" id="map-screen" aria-label="Карта миссии">
+        <div id="map-scroll">
+            <div id="map-grid"></div>
+        </div>
+        <div id="current-task">
+            <span id="task-text">📜 Этап 1: Село</span>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 3: СЕЛО (п.2.1, п.3.1)
+         ============================================================ -->
+    <section class="screen" id="village-screen" aria-label="Село">
+        <div id="village-header">
+            <button class="btn btn-close" id="btn-village-back" type="button">⬅ На карту</button>
+            <h2 id="village-title">Село</h2>
+        </div>
+
+        <div id="village-container">
+            <div id="village-center-zone">
+                <div id="village-building" class="city-building built" title="Центральное здание села">
+                    <span class="city-building-icon">🏘️</span>
+                    <span class="city-building-label">Село</span>
+                </div>
+                <div id="village-stockade-zone" class="city-stockade-zone" title="Зона частокола">
+                    <span class="city-stockade-icon">🪵</span>
+                    <span class="city-stockade-label">Место под частокол</span>
+                </div>
+            </div>
+
+            <div id="village-construction-panel" class="city-panel">
+                <div class="city-panel-title">Приоритетная стройка</div>
+                <div id="village-construction-list" class="city-construction-list"></div>
+            </div>
+
+            <div id="village-tasks-panel" class="city-panel">
+                <div class="city-panel-title">Задания этапа</div>
+                <ul id="village-tasks-list" class="city-tasks-list"></ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 4: ГОРОД (п.2.3, п.3.2)
+         ============================================================ -->
+    <section class="screen" id="city-screen" aria-label="Город">
+        <div id="city-header">
+            <button class="btn btn-close" id="btn-city-back" type="button">⬅ На карту</button>
+            <h2 id="city-title">Город</h2>
+        </div>
+
+        <div id="city-container">
+            <div id="city-center-zone">
+                <div id="city-building" class="city-building" title="Княжий терем">
+                    <span class="city-building-icon">🏛️</span>
+                    <span class="city-building-label">Княжий терем</span>
+                </div>
+                <div id="city-market-zone" class="city-stockade-zone" title="Рынок">
+                    <span class="city-stockade-icon">🏪</span>
+                    <span class="city-stockade-label">Рынок</span>
+                </div>
+                <div id="city-wharf-zone" class="city-stockade-zone" title="Верфь">
+                    <span class="city-stockade-icon">⛵</span>
+                    <span class="city-stockade-label">Верфь</span>
+                </div>
+            </div>
+
+            <div id="city-buildings-panel" class="city-panel">
+                <div class="city-panel-title">Постройки города</div>
+                <div id="city-buildings-list" class="city-construction-list"></div>
+            </div>
+
+            <div id="city-tasks-panel" class="city-panel">
+                <div class="city-panel-title">Задания этапа</div>
+                <ul id="city-tasks-list" class="city-tasks-list"></ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 5: ЛЕС (РесЛок, п.3.3)
+         ============================================================ -->
+    <section class="screen" id="submap-screen" aria-label="Дремучий Лес">
+        <div id="submap-header">
+            <button class="btn btn-close" id="btn-back-to-map" type="button">⬅ На карту мира</button>
+            <h2 id="submap-title">Дремучий Лес</h2>
+        </div>
+
+        <div id="forest-container">
+            <div class="forest-section-title">Зона добычи (Верхнее поле)</div>
+            <div id="submap-grid-upper"></div>
+
+            <div class="forest-section-title">Склады (Нижнее поле)</div>
+            <div id="submap-grid-lower"></div>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 6: ПОЛЕ (РесЛок, п.3.3)
+         ============================================================ -->
+    <section class="screen" id="field-screen" aria-label="Поле">
+        <div id="field-header">
+            <button class="btn btn-close" id="btn-field-back" type="button">⬅ На карту</button>
+            <h2 id="field-title">Поле</h2>
+        </div>
+
+        <div id="field-container">
+            <div id="field-top-row">
+                <div id="field-main">
+                    <div class="forest-section-title">Поле (6 × 5)</div>
+                    <div id="field-grid"></div>
+                </div>
+                <aside id="seeds-window" aria-label="Семена (общие для всех полей)">
+                    <div class="seeds-title">🌱 Семена</div>
+                    <div class="seeds-list" id="seeds-list"></div>
+                    <div class="seeds-hint">Выберите растение, затем тапайте по квадратам поля. Семена общие для всех полей.</div>
+                </aside>
+            </div>
+
+            <div id="barns-section">
+                <div class="forest-section-title">Амбары (Нижнее поле)</div>
+                <div id="barns-grid"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 7: ЛАГЕРЬ БАНДИТОВ (п.3.4, п.2.3)
+         ============================================================ -->
+    <section class="screen" id="bandit-screen" aria-label="Лагерь бандитов">
+        <div id="bandit-header">
+            <button class="btn btn-close" id="btn-bandit-back" type="button">⬅ На карту</button>
+            <h2 id="bandit-title">Лагерь бандитов</h2>
+        </div>
+
+        <div id="bandit-container">
+            <div class="bandit-banner">🏴‍☠️ Лагерь бандитов</div>
+            <div class="bandit-desc" id="bandit-desc">Горожане напуганы. Победите бандитов, чтобы город присоединился.</div>
+            <div class="bandit-stats" id="bandit-stats"></div>
+            <div class="bandit-actions" id="bandit-actions"></div>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 8: БОЙ (п.2.3, п.2.6)
+         ============================================================ -->
+    <section class="screen" id="battle-screen" aria-label="Бой">
+        <div id="battle-header">
+            <h2 id="battle-title">Бой</h2>
+        </div>
+        <div id="battle-container">
+            <div class="battle-side player">
+                <div class="battle-side-title">Ваши войска</div>
+                <div id="battle-player-units" class="battle-units"></div>
+            </div>
+            <div class="battle-vs">⚔️</div>
+            <div class="battle-side enemy">
+                <div class="battle-side-title">Противник</div>
+                <div id="battle-enemy-units" class="battle-units"></div>
+            </div>
+        </div>
+        <div id="battle-log" class="battle-log"></div>
+        <div id="battle-actions"></div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 9: КНЯЖИЙ ТЕРЕМ (найм, п.2.5)
+         ============================================================ -->
+    <section class="screen" id="army-screen" aria-label="Княжий терем">
+        <div id="army-header">
+            <button class="btn btn-close" id="btn-army-back" type="button">⬅ Назад</button>
+            <h2 id="army-title">Княжий терем</h2>
+        </div>
+        <div id="army-container">
+            <div class="army-info" id="army-info"></div>
+            <div class="city-panel">
+                <div class="city-panel-title">Найм юнитов</div>
+                <div id="army-recruit-list" class="city-construction-list"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ЭКРАН 10: НАБЕГ (п.2.6)
+         ============================================================ -->
+    <section class="screen" id="raid-screen" aria-label="Набег">
+        <div id="raid-header">
+            <h2 id="raid-title">Набег!</h2>
+        </div>
+        <div id="raid-container">
+            <div class="raid-banner">🏹 Набег врагов</div>
+            <div class="raid-desc" id="raid-desc"></div>
+            <div class="raid-stats" id="raid-stats"></div>
+            <div id="raid-actions"></div>
+        </div>
+    </section>
+
+    <!-- ============================================================
+         ПАНЕЛЬ ДЕЙСТВИЙ
+         ============================================================ -->
+    <aside id="action-panel" aria-label="Панель действий">
+        <div id="action-title"></div>
+        <div id="action-desc"></div>
+        <div id="action-buttons"></div>
+        <button class="btn btn-close" id="btn-cancel-action" type="button">Отмена</button>
+    </aside>
+
+    <!-- ============================================================
+         НИЖНЯЯ ПАНЕЛЬ (п.10.2)
+         ============================================================ -->
+    <nav id="bottom-bar" aria-label="Нижняя панель">
+        <button class="bottom-btn" id="btn-nav-map" type="button">🗺️ Карта</button>
+        <button class="bottom-btn" id="btn-nav-tasks" type="button">📜 Задания</button>
+        <button class="bottom-btn" id="btn-nav-army" type="button">⚔️ Армия</button>
+        <button class="bottom-btn" id="btn-nav-settings" type="button">⚙️ Настройки</button>
+    </nav>
+
+    <!-- ============================================================
+         МОДАЛЬНОЕ ОКНО (победа/поражение, диалоги)
+         ============================================================ -->
+    <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div id="modal-content">
+            <h2 id="modal-title"></h2>
+            <div id="modal-text"></div>
+            <button class="btn btn-primary" id="modal-btn" type="button"></button>
+        </div>
+    </div>
+
 </div>
 
-<!-- ИГРОВОЙ ЭКРАН -->
-<div id="game-screen" class="screen">
-    <!-- 10.1 Верхняя панель -->
-    <div id="top-bar">
-        <div class="stat-item">
-            <span class="stat-label">Провиант</span>
-            <span class="stat-val" id="ui-provant">20</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Древесина</span>
-            <span class="stat-val" id="ui-wood">10</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Крестьяне</span>
-            <span class="stat-val" id="ui-workers">5/5</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">ПАТ / ПАС</span>
-            <span class="stat-val" id="ui-pat-pas">50% / 50%</span>
-        </div>
-        <div class="stat-item" id="timer-box">
-            <span class="stat-label">Таймер</span>
-            <span class="stat-val" id="ui-timer">10:00</span>
-        </div>
-    </div>
-
-    <!-- Текущая задача -->
-    <div id="task-banner">
-        <span id="ui-current-task">📜 Этап 1: Построить частокол (150 🪵) и собрать урожай</span>
-    </div>
-
-    <!-- Сеточная карта миссии (4x5) -->
-    <div id="map-viewport">
-        <div id="map-grid"></div>
-        <svg id="route-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
-        <div id="toast-container"></div>
-    </div>
-
-    <!-- 10.2 Нижняя панель -->
-    <div id="bottom-bar">
-        <button class="nav-btn" id="btn-map">Карта</button>
-        <button class="nav-btn" id="btn-tasks">Задания</button>
-        <button class="nav-btn" id="btn-settings">Настройки</button>
-    </div>
-</div>
-
-<!-- МОДАЛЬНОЕ ОКНО -->
-<div id="modal-overlay" class="modal-overlay">
-    <div class="modal-card">
-        <div class="modal-header">
-            <span id="modal-title">Заголовок</span>
-            <button class="close-btn" id="btn-close-modal">✕</button>
-        </div>
-        <div class="modal-body" id="modal-body"></div>
-    </div>
-</div>
-
-<script src="index.js"></script>
+<script src="index.js" defer></script>
 </body>
 </html>

@@ -13,10 +13,10 @@
     box-sizing: border-box;
     user-select: none;
     -webkit-user-select: none;
-    touch-action: none;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+/* touch-action управляем точечно, а не глобально */
 body, html {
     margin: 0;
     padding: 0;
@@ -25,6 +25,7 @@ body, html {
     background-color: var(--bg-dark);
     color: var(--text-main);
     overflow: hidden;
+    touch-action: manipulation;
 }
 
 /* Экраны */
@@ -131,7 +132,7 @@ button.primary:active {
     text-overflow: ellipsis;
 }
 
-/* Сеточная карта миссии (4x5 из старой демки) */
+/* Сеточная карта миссии (4x5) */
 #map-viewport {
     flex: 1;
     position: relative;
@@ -141,18 +142,20 @@ button.primary:active {
     justify-content: center;
     align-items: center;
     padding: 10px;
+    touch-action: none; /* жесты карты (drag/pinch) */
 }
 
 #map-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    grid-template-rows: repeat(5, 1fr);
+    grid-template-rows: repeat(5, minmax(0, 1fr));
     gap: 8px;
     width: 100%;
     max-width: 440px;
     height: 100%;
     max-height: 620px;
     transform-origin: center center;
+    will-change: transform;
 }
 
 .loc {
@@ -168,6 +171,8 @@ button.primary:active {
     text-align: center;
     cursor: pointer;
     transition: transform 0.1s ease, border-color 0.15s ease;
+    min-height: 0;
+    overflow: hidden;
 }
 .loc:active {
     transform: scale(0.97);
@@ -243,6 +248,7 @@ button.primary:active {
     height: 100%;
     pointer-events: none;
     z-index: 5;
+    overflow: visible;
 }
 
 /* Нижняя панель (10.2) */
@@ -307,7 +313,7 @@ button.primary:active {
     display: none;
     justify-content: center;
     align-items: center;
-    z-index: 30;
+    z-index: 60; /* выше тостов */
     padding: 16px;
 }
 .modal-overlay.open {

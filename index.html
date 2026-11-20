@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Хроники Державы</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -32,7 +32,7 @@
                 <option value="mission_1">Глава 1: От села до рати</option>
             </select>
         </div>
-        <button class="primary" onclick="Game.startMission()">Начать миссию</button>
+        <button class="primary" id="btn-start">Начать миссию</button>
     </div>
 </div>
 
@@ -62,23 +62,23 @@
         </div>
     </div>
 
-    <!-- Текущая задача (как в старой демке) -->
+    <!-- Текущая задача -->
     <div id="task-banner">
         <span id="ui-current-task">📜 Этап 1: Построить частокол (150 🪵) и собрать урожай</span>
     </div>
 
-    <!-- Сеточная карта миссии (4x5 из старой версии) -->
+    <!-- Сеточная карта миссии (4x5) -->
     <div id="map-viewport">
         <div id="map-grid"></div>
-        <svg id="route-overlay"></svg>
+        <svg id="route-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
         <div id="toast-container"></div>
     </div>
 
     <!-- 10.2 Нижняя панель -->
     <div id="bottom-bar">
-        <button class="nav-btn" onclick="UI.closeAllModals()">Карта</button>
-        <button class="nav-btn" onclick="UI.openTasks()">Задания</button>
-        <button class="nav-btn" onclick="UI.openSettings()">Настройки</button>
+        <button class="nav-btn" id="btn-map">Карта</button>
+        <button class="nav-btn" id="btn-tasks">Задания</button>
+        <button class="nav-btn" id="btn-settings">Настройки</button>
     </div>
 </div>
 
@@ -87,7 +87,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <span id="modal-title">Заголовок</span>
-            <button class="close-btn" onclick="UI.closeAllModals()">✕</button>
+            <button class="close-btn" id="btn-close-modal">✕</button>
         </div>
         <div class="modal-body" id="modal-body"></div>
     </div>
